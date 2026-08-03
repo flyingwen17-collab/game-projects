@@ -1,0 +1,22 @@
+# Unity 專案的二進位資產交給 Git LFS，避免 repo 爆炸
+*.psd   filter=lfs diff=lfs merge=lfs -text
+*.tga   filter=lfs diff=lfs merge=lfs -text
+*.tif   filter=lfs diff=lfs merge=lfs -text
+*.tiff  filter=lfs diff=lfs merge=lfs -text
+*.exr   filter=lfs diff=lfs merge=lfs -text
+*.hdr   filter=lfs diff=lfs merge=lfs -text
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.wav   filter=lfs diff=lfs merge=lfs -text
+*.mp3   filter=lfs diff=lfs merge=lfs -text
+*.ogg   filter=lfs diff=lfs merge=lfs -text
+*.cubemap filter=lfs diff=lfs merge=lfs -text
+
+# Unity 的文字資產強制 LF，避免跨平台換行汙染 diff
+*.cs      text eol=lf diff=csharp
+*.shader  text eol=lf
+*.unity   text eol=lf
+*.asset   text eol=lf
+*.prefab  text eol=lf
+*.mat     text eol=lf
+*.meta    text eol=lf

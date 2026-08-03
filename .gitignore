@@ -1,0 +1,50 @@
+# ---- Unity ----
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Unity 自動產生的方案/專案檔
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# 打包產物
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# 崩潰報告
+sysinfo.txt
+crashlytics-build.properties
+
+# ---- 作業系統 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 編輯器 ----
+.vs/
+.vscode/
+.idea/
+
+# ---- 本專案 ----
+# _Refs 是 AI 生成的參考素材，體積大且可重新生成；如需版控請自行移除此行
+_Refs/
