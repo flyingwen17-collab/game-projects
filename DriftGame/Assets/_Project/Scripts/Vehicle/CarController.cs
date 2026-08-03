@@ -39,7 +39,14 @@ public class CarController : MonoBehaviour
     public float Throttle01 => Mathf.Max(0f, throttleInput);
     public bool IsBraking { get; private set; }
     public float EngineRpm { get; private set; }
-    public int Gear { get; private set; } = 1;          // 1 起始，0 保留給空檔
+    /// 0 = 倒檔 R，1..n = 前進檔
+    public int Gear { get; private set; } = 1;
+    public bool IsReverse => Gear == 0;
+    /// 檔位顯示字串（R / 1 / 2 …）
+    public string GearLabel => Gear == 0 ? "R" : Gear.ToString();
+    /// 這一幀是否觸發回火（供音效與排氣火焰使用）
+    public bool BackfireTriggered { get; private set; }
+    public bool ShiftedThisFrame { get; private set; }
     public float SteerAngleDeg { get; private set; }
     public float ClutchEngage { get; private set; } = 1f;
 
@@ -87,6 +94,8 @@ public class CarController : MonoBehaviour
     bool handbrakeInput;
     float steerCurrent;
     float shiftCooldown;
+    float reverseHoldTimer;
+    float lastDriveInput;
     Vector3 spawnPos;
     Quaternion spawnRot;
 
@@ -161,11 +170,10 @@ public class CarController : MonoBehaviour
             if (kb.sKey.isPressed || kb.downArrowKey.isPressed) throttle -= 1f;
             hb = kb.spaceKey.isPressed;
 
-            if (!autoShift)
-            {
-                if (kb.eKey.wasPressedThisFrame) ShiftUp();
-                if (kb.qKey.wasPressedThisFrame) ShiftDown();
-            }
+            // 手排：Q 升檔、E 降檔。按下任一鍵就自動關閉自排。
+            if (kb.qKey.wasPressedThisFrame) { autoShift = false; ShiftUp(); }
+            if (kb.eKey.wasPressedThisFrame) { autoShift = false; ShiftDown(); }
+            if (kb.tKey.wasPressedThisFrame) autoShift = !autoShift;   // T 切換自排/手排
         }
 
         var pad = Gamepad.current;
@@ -190,6 +198,7 @@ public class CarController : MonoBehaviour
         Vector3 vel = rb.velocity;
         SpeedKmh = vel.magnitude * 3.6f;
         LastTotalForce = Vector3.zero;
+        ShiftedThisFrame = false;
 
         UpdateSteering(dt);
 
@@ -316,14 +325,28 @@ public class CarController : MonoBehaviour
 
     // ---------------- 引擎與變速箱 ----------------
 
+    /// 目前檔位的總傳動比（含終傳）。倒檔為負值，驅動力方向自然反轉。
+    float TotalRatio()
+    {
+        if (spec.gearRatios == null || spec.gearRatios.Length == 0) return spec.finalDrive;
+        if (Gear == 0) return -spec.reverseRatio * spec.finalDrive;
+        return spec.gearRatios[Mathf.Clamp(Gear, 1, spec.gearRatios.Length) - 1] * spec.finalDrive;
+    }
+
+    /// 倒檔時 S 是油門、W 是煞車；前進檔則相反。
+    float DriveInput => Gear == 0 ? Mathf.Max(0f, -throttleInput) : Mathf.Max(0f, throttleInput);
+    float BrakeInput => Gear == 0 ? Mathf.Max(0f, throttleInput) : Mathf.Max(0f, -throttleInput);
+
     void UpdateEngineAndGears(float dt)
     {
         if (spec.gearRatios == null || spec.gearRatios.Length == 0) return;
-        Gear = Mathf.Clamp(Gear, 1, spec.gearRatios.Length);
+        Gear = Mathf.Clamp(Gear, 0, spec.gearRatios.Length);
 
-        // 由驅動輪轉速回推引擎轉速
+        UpdateReverseEngagement(dt);
+
+        // 由驅動輪轉速回推引擎轉速（用絕對值，倒檔轉速也是正的）
         float avgOmega = DrivenWheelOmega();
-        float ratio = spec.gearRatios[Gear - 1] * spec.finalDrive;
+        float ratio = Mathf.Abs(TotalRatio());
         float wheelDrivenRpm = Mathf.Abs(avgOmega) * ratio * 60f / (2f * Mathf.PI);
 
         // 離合器：平時接合，只有換檔瞬間斷開。
@@ -338,21 +361,58 @@ public class CarController : MonoBehaviour
 
         // 低速時允許引擎轉速高於輪速反推值 —— 就是踩油門讓離合器打滑起步
         float slipAllowance = 1f - Mathf.Clamp01(SpeedKmh / 22f);
-        float launchRpm = Mathf.Lerp(spec.idleRpm, spec.peakTorqueRpm * 1.05f, Throttle01) * slipAllowance;
+        float launchRpm = Mathf.Lerp(spec.idleRpm, spec.peakTorqueRpm * 1.05f, DriveInput) * slipAllowance;
         float targetRpm = Mathf.Max(wheelDrivenRpm, launchRpm, spec.idleRpm);
 
+        float prevRpm = EngineRpm;
         EngineRpm = Mathf.Lerp(EngineRpm, Mathf.Min(targetRpm, spec.redlineRpm * 1.02f), 10f * dt);
 
         // 空油門時引擎自然回落
-        if (Throttle01 < 0.05f)
+        if (DriveInput < 0.05f)
             EngineRpm = Mathf.Lerp(EngineRpm, Mathf.Max(spec.idleRpm, wheelDrivenRpm), 5f * dt);
 
-        if (autoShift && shiftCooldown <= 0f)
+        // 回火：高轉速下收油，未燃燒的混合氣在排氣管中爆燃
+        BackfireTriggered = false;
+        if (prevRpm > spec.peakTorqueRpm * 0.75f && DriveInput < 0.05f && lastDriveInput > 0.5f)
+            BackfireTriggered = true;
+        lastDriveInput = DriveInput;
+
+        // 自排只在前進檔作用，倒檔不換
+        if (autoShift && shiftCooldown <= 0f && Gear >= 1)
         {
-            if (EngineRpm > spec.redlineRpm * 0.94f && Gear < spec.gearRatios.Length && throttleInput > 0.1f)
+            if (EngineRpm > spec.redlineRpm * 0.94f && Gear < spec.gearRatios.Length && DriveInput > 0.1f)
                 ShiftUp();
             else if (EngineRpm < spec.peakTorqueRpm * 0.52f && Gear > 1)
                 ShiftDown();
+        }
+    }
+
+    /// 停下來後持續按煞車鍵就進倒檔；倒檔中按前進鍵且幾乎停住就回一檔。
+    void UpdateReverseEngagement(float dt)
+    {
+        float forwardSpeed = Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+
+        if (Gear >= 1)
+        {
+            bool wantsReverse = throttleInput < -0.5f && forwardSpeed < 1.5f;
+            reverseHoldTimer = wantsReverse ? reverseHoldTimer + dt : 0f;
+            if (reverseHoldTimer > 0.35f && Gear == 1)
+            {
+                Gear = 0;
+                shiftCooldown = 0.15f;
+                reverseHoldTimer = 0f;
+            }
+        }
+        else // 倒檔中
+        {
+            bool wantsForward = throttleInput > 0.5f && forwardSpeed > -1.5f;
+            reverseHoldTimer = wantsForward ? reverseHoldTimer + dt : 0f;
+            if (reverseHoldTimer > 0.3f)
+            {
+                Gear = 1;
+                shiftCooldown = 0.15f;
+                reverseHoldTimer = 0f;
+            }
         }
     }
 
@@ -360,15 +420,31 @@ public class CarController : MonoBehaviour
     void ShiftUp()
     {
         if (spec.gearRatios == null || Gear >= spec.gearRatios.Length) return;
+        // 高轉升檔會放砲
+        if (EngineRpm > spec.peakTorqueRpm * 0.8f) BackfireTriggered = true;
         Gear++;
         shiftCooldown = 0.12f;
+        ShiftedThisFrame = true;
     }
 
+    /// 降檔。一檔再降就進倒檔（需幾乎停住，避免高速誤入倒檔打爆變速箱）。
     void ShiftDown()
     {
-        if (Gear <= 1) return;
-        Gear--;
+        if (Gear <= 0) return;
+        if (Gear == 1)
+        {
+            float forwardSpeed = Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+            if (forwardSpeed > 3f) return;
+            Gear = 0;
+        }
+        else
+        {
+            Gear--;
+            // 降檔補油同樣容易放砲
+            if (EngineRpm > spec.peakTorqueRpm * 0.6f) BackfireTriggered = true;
+        }
         shiftCooldown = 0.10f;
+        ShiftedThisFrame = true;
     }
 
     float DrivenWheelOmega()
@@ -381,13 +457,21 @@ public class CarController : MonoBehaviour
         }
     }
 
-    /// 引擎輸出經齒比放大後、送到「一條軸」的總扭力
+    /// 引擎輸出經齒比放大後、送到「一條軸」的總扭力。倒檔時 ratio 為負，扭力自然反向。
     float CurrentDriveTorquePerAxle()
     {
         if (spec.gearRatios == null || spec.gearRatios.Length == 0) return 0f;
-        float ratio = spec.gearRatios[Gear - 1] * spec.finalDrive;
+        float ratio = TotalRatio();
 
-        float throttle = Mathf.Max(0f, throttleInput);
+        float throttle = DriveInput;
+
+        // 倒檔限速：實車倒檔齒比高、拉不快
+        if (Gear == 0)
+        {
+            float reverseSpeed = -Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+            if (reverseSpeed > spec.reverseTopSpeedKmh) throttle = 0f;
+        }
+
         float engineT = spec.TorqueAt(EngineRpm) * throttle;
 
         // 放開油門的引擎煞車
@@ -407,8 +491,8 @@ public class CarController : MonoBehaviour
         float lockTorque = spec.diffLock * 900f;
 
         float baseMu = isFront ? spec.tireGripFront : spec.tireGripRear;
-        float brakeInput = Mathf.Max(0f, -throttleInput);
-        IsBraking = brakeInput > 0.05f && Vector3.Dot(rb.velocity, transform.forward) > 1f;
+        float brakeInput = BrakeInput;
+        IsBraking = brakeInput > 0.05f && Mathf.Abs(Vector3.Dot(rb.velocity, transform.forward)) > 1f;
 
         float brakeT = brakeInput * spec.brakeTorqueNm *
                        (isFront ? spec.brakeBiasFront : 1f - spec.brakeBiasFront) * 2f;

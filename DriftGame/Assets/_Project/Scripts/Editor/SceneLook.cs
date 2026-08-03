@@ -124,44 +124,25 @@ public static class SceneLook
 
     static void ApplySkyAndLighting()
     {
-        // 優先用 Codex 生成的黃昏全景照片當天空盒（2:1 equirectangular），
-        // 沒有才退回程序化天空。全景照的雲層與色彩層次是程序化天空做不出來的。
-        var pano = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/SKY_Dusk.png");
-        Material sky;
+        // 三個時段各一張全景天空盒（2:1 equirectangular）。
+        // 全景照的雲層與色彩層次是程序化天空做不出來的。
+        var skyNoon = BuildPanoSky("Skybox_Noon", "SKY_Noon", 1.05f, 140f);
+        var skyDusk = BuildPanoSky("Skybox_GoldenHour", "SKY_Dusk", 1.15f, 205f);
+        var skyNight = BuildPanoSky("Skybox_Night", "SKY_Night", 1.35f, 60f);
 
-        if (pano != null)
-        {
-            sky = AssetDatabase.LoadAssetAtPath<Material>(SkyboxPath);
-            var panoShader = Shader.Find("Skybox/Panoramic");
-            if (sky == null || sky.shader != panoShader)
-            {
-                if (sky != null) AssetDatabase.DeleteAsset(SkyboxPath);
-                sky = new Material(panoShader);
-                AssetDatabase.CreateAsset(sky, SkyboxPath);
-            }
-            sky.SetTexture("_MainTex", pano);
-            sky.SetFloat("_Exposure", 1.15f);
-            sky.SetFloat("_Rotation", 205f);   // 把最亮的夕陽轉到太陽方向
-            sky.SetFloat("_Mapping", 1f);      // Latitude-Longitude Layout
-            sky.SetFloat("_ImageType", 0f);    // 360 度
-        }
-        else
-        {
-            sky = AssetDatabase.LoadAssetAtPath<Material>(SkyboxPath);
-            if (sky == null)
-            {
-                sky = new Material(Shader.Find("Skybox/Procedural"));
-                AssetDatabase.CreateAsset(sky, SkyboxPath);
-            }
-            sky.SetFloat("_SunSize", 0.05f);
-            sky.SetFloat("_AtmosphereThickness", 1.35f);
-            sky.SetColor("_SkyTint", new Color(0.52f, 0.60f, 0.82f));
-            sky.SetColor("_GroundColor", new Color(0.32f, 0.29f, 0.26f));
-            sky.SetFloat("_Exposure", 1.25f);
-        }
+        RenderSettings.skybox = skyDusk != null ? skyDusk : skyNoon;
 
-        EditorUtility.SetDirty(sky);
-        RenderSettings.skybox = sky;
+        // 時段控制器：一次切換天空、太陽、環境光、霧
+        var tod = Object.FindObjectOfType<TimeOfDay>();
+        if (tod == null)
+        {
+            var go = new GameObject("TimeOfDay");
+            tod = go.AddComponent<TimeOfDay>();
+        }
+        tod.skyNoon = skyNoon;
+        tod.skyDusk = skyDusk;
+        tod.skyNight = skyNight;
+        tod.preset = TimeOfDay.Preset.Dusk;
 
         // 太陽：低角度長影子是「黃昏感」的來源
         var sun = FindSun();
@@ -189,6 +170,42 @@ public static class SceneLook
 
         RenderSettings.reflectionIntensity = 1f;
         RenderSettings.defaultReflectionMode = DefaultReflectionMode.Skybox;
+    }
+
+    /// 建立一張 Panoramic 天空盒材質。找不到貼圖就回傳程序化天空當備援。
+    static Material BuildPanoSky(string matName, string texName, float exposure, float rotation)
+    {
+        string path = MaterialsDir + "/" + matName + ".mat";
+        var tex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/" + texName + ".png");
+
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+        Shader shader = tex != null ? Shader.Find("Skybox/Panoramic") : Shader.Find("Skybox/Procedural");
+        if (shader == null) return existing;
+
+        Material mat = existing;
+        if (mat == null || mat.shader != shader)
+        {
+            if (mat != null) AssetDatabase.DeleteAsset(path);
+            mat = new Material(shader);
+            AssetDatabase.CreateAsset(mat, path);
+        }
+
+        if (tex != null)
+        {
+            mat.SetTexture("_MainTex", tex);
+            mat.SetFloat("_Exposure", exposure);
+            mat.SetFloat("_Rotation", rotation);
+            mat.SetFloat("_Mapping", 1f);    // Latitude-Longitude Layout
+            mat.SetFloat("_ImageType", 0f);  // 360 度
+        }
+        else
+        {
+            mat.SetFloat("_AtmosphereThickness", 1.35f);
+            mat.SetFloat("_Exposure", exposure);
+        }
+
+        EditorUtility.SetDirty(mat);
+        return mat;
     }
 
     static Light FindSun()
@@ -233,6 +250,17 @@ public static class SceneLook
         urp.msaaSampleCount = 4;
         urp.shadowDistance = 190f;
         urp.shadowCascadeCount = 4;
+
+        // 車頭燈是「額外光源」。URP 預設每物件只吃 4 盞、且可能是頂點光照，
+        // 夜晚三台車共 6 盞頭燈會照不出來，必須開逐像素並提高上限。
+        var urpSo = new SerializedObject(urp);
+        var mode = urpSo.FindProperty("m_AdditionalLightsRenderingMode");
+        if (mode != null) mode.enumValueIndex = 1;                    // PerPixel
+        var perObj = urpSo.FindProperty("m_AdditionalLightsPerObjectLimit");
+        if (perObj != null) perObj.intValue = 8;
+        var addShadow = urpSo.FindProperty("m_AdditionalLightShadowsSupported");
+        if (addShadow != null) addShadow.boolValue = false;           // 車燈陰影太吃效能
+        urpSo.ApplyModifiedProperties();
 
         // supportsSoftShadows 在 Unity 6 是唯讀屬性，只能改序列化欄位
         var so = new SerializedObject(urp);

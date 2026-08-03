@@ -6,6 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/_Project/Scenes/Graybox.unity
-    guid: a9e595f344043cd4abb5496a5fd6212c
+    path: Assets/_Project/Scenes/Arena.unity
+    guid: c30c032fef6d12149ae4e6618b2e5bef
   m_configObjects: {}

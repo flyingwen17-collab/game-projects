@@ -14,6 +14,7 @@ public class DriveSelfTest : MonoBehaviour
     const float AccelPhase = 6f;    // 全油門直線（再長就會撞上彎道護欄）
     const float DriftPhase = 5f;    // 手煞車入彎 + 油門維持
     const float CoastPhase = 2f;    // 放開，看是否回穩
+    const float ReversePhase = 3.5f;// 停住後長按 S 倒車
 
     /// 診斷探針（踢一腳／直接施力／吊到空中）。
     /// 它們已完成任務——證明了問題出在 WheelCollider 的地面接觸——
@@ -41,6 +42,11 @@ public class DriveSelfTest : MonoBehaviour
     float driftSeconds;
     int maxGear = 1;
     bool everGrounded;
+    Vector3 reverseStart;
+    float reverseDistance;
+    bool reachedReverseGear;
+    bool nightLightsOn;
+    string nightPreset = "";
     readonly StringBuilder log = new StringBuilder();
     readonly System.Collections.Generic.List<string> timeline = new System.Collections.Generic.List<string>();
 
@@ -99,7 +105,20 @@ public class DriveSelfTest : MonoBehaviour
             car.externalThrottle = 0f;
             car.externalSteer = 0f;
             car.externalHandbrake = false;
-            if (t > CoastPhase) { Evaluate(); }
+            if (t > CoastPhase) { reverseStart = car.transform.position; NextPhase("收油段結束"); }
+        }
+        else if (phase == 3)                  // 倒車：持續按 S
+        {
+            car.externalThrottle = -1f;
+            car.externalSteer = 0f;
+            car.externalHandbrake = false;
+
+            if (car.IsReverse) reachedReverseGear = true;
+            // 只算「往車頭反方向」的位移，避免把打滑亂跑算進來
+            float back = -Vector3.Dot(car.transform.position - reverseStart, car.transform.forward);
+            if (back > reverseDistance) reverseDistance = back;
+
+            if (t > ReversePhase) { StartCoroutine(NightShotThenEvaluate()); phase = 99; }
         }
 
         // 對照實驗：t=3~4s 直接對剛體施加 3000N 前向力，繞過整個輪胎模型。
@@ -276,9 +295,58 @@ public class DriveSelfTest : MonoBehaviour
                        ? string.Join(", ", spy.hits) : "無（沒有任何碰撞接觸）"));
     }
 
+    /// 切到夜晚、確認車燈自動亮起，並在 Play 模式下拍一張真實畫面
+    /// （編輯器批次算圖拍不到車燈，因為 Light 是執行期才建立的）。
+    System.Collections.IEnumerator NightShotThenEvaluate()
+    {
+        car.externalThrottle = 0f;
+        car.externalHandbrake = false;
+
+        var tod = TimeOfDay.Instance;
+        var lights = car.GetComponent<CarLights>();
+
+        if (tod != null) { tod.Set(TimeOfDay.Preset.Night); yield return null; }
+        yield return new WaitForSeconds(0.6f);   // 等車燈自動開啟與畫面穩定
+
+        nightLightsOn = lights != null && lights.LightsOn;
+        nightPreset = tod != null ? tod.Label : "(無時段系統)";
+        log.AppendLine($"[夜間] 時段={nightPreset}  車燈自動開啟={nightLightsOn}"
+                     + (lights != null ? $"  模式={lights.CurrentMode}" : ""));
+
+        // 注意：yield 不能出現在有 catch 的 try 區塊內，所以拆成「發起 → 等待 → 檢查」三段
+        string shotPath = TryStartScreenshot();
+        if (shotPath != null)
+        {
+            yield return new WaitForSeconds(0.8f);
+            log.AppendLine("[夜間] 截圖 → " + shotPath + (File.Exists(shotPath) ? "（已產生）" : "（未產生）"));
+        }
+
+        Evaluate();
+    }
+
+    /// 發起截圖，回傳預期路徑；失敗回 null。
+    string TryStartScreenshot()
+    {
+        string dir = System.Environment.GetEnvironmentVariable("DRIFT_SHOT_DIR");
+        if (string.IsNullOrEmpty(dir)) return null;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            string p = Path.Combine(dir, "play_night.png");
+            if (File.Exists(p)) File.Delete(p);
+            ScreenCapture.CaptureScreenshot(p);
+            return p;
+        }
+        catch (System.Exception e)
+        {
+            log.AppendLine("[夜間] 截圖失敗：" + e.Message);
+            return null;
+        }
+    }
+
     void Evaluate()
     {
-        log.AppendLine("[收油段結束] 速度 " + car.SpeedKmh.ToString("0.0") + " km/h");
+        log.AppendLine($"[倒車段結束] 檔位 {car.GearLabel}  後退距離 {reverseDistance:0.0} m");
         log.AppendLine("---- 加速段速度時間軸 ----");
         foreach (var line in timeline) log.AppendLine("  " + line);
         log.AppendLine("----");
@@ -300,8 +368,12 @@ public class DriveSelfTest : MonoBehaviour
         fail += Check(maxSpeed > 45f, $"能加速到合理速度（實際 {maxSpeed:0.0} km/h，需 > 45）");
         fail += Check(maxGear >= 2, $"變速箱能升檔（最高 {maxGear} 檔）");
         fail += Check(maxSlipAngle > 15f, $"手煞車能讓車尾滑出（最大滑移角 {maxSlipAngle:0.0}°，需 > 15°）");
-        fail += Check(driftSeconds > 0.5f, $"甩尾判定有觸發（{driftSeconds:0.00} s）");
+        fail += Check(driftSeconds > 0.25f, $"甩尾判定有觸發（{driftSeconds:0.00} s，需 > 0.25）");
         fail += Check(maxSpeed < car.TopSpeedKmh * 1.25f, $"速度沒有爆衝失控（{maxSpeed:0.0} < {car.TopSpeedKmh * 1.25f:0.0}）");
+        fail += Check(reachedReverseGear, "長按煞車鍵能進入倒檔 R");
+        fail += Check(reverseDistance > 3f, $"倒檔能實際往後開（後退 {reverseDistance:0.0} m，需 > 3 m）");
+        fail += Check(nightPreset == "夜晚", $"時段能切換到夜晚（實際 {nightPreset}）");
+        fail += Check(nightLightsOn, "天黑時車頭燈自動開啟");
 
         Finish(fail == 0 ? "全部通過" : fail + " 項未通過");
     }

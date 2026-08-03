@@ -19,31 +19,69 @@ public static class AudioSynth
         WriteWav(AudioDir + "/brake_squeal.wav", Brake());
         WriteWav(AudioDir + "/bgm_loop.wav", Bgm());
         WriteWav(AudioDir + "/impact.wav", Impact());
+        WriteWav(AudioDir + "/backfire.wav", Backfire());
+        WriteWav(AudioDir + "/horn.wav", Horn());
         AssetDatabase.Refresh();
         Debug.Log("[AudioSynth] audio generated");
     }
 
-    // ---------- 引擎：整數倍諧波 → 無縫循環 ----------
+    // ---------- 引擎：四缸四行程點火脈衝模型 ----------
+    /// 真實引擎聲的來源不是正弦諧波，而是「一連串排氣脈衝」：
+    /// 四缸四行程每轉兩次點火，每次點火在排氣管產生一個帶共鳴尾巴的爆音。
+    /// 脈衝的銳利度 + 排氣管共鳴 + 各缸的細微不平均，才是引擎聲的特徵。
     static float[] Engine()
     {
-        int n = Rate; // 1 秒
+        int n = Rate;                 // 1 秒，f0 取整數才能無縫循環
         var s = new float[n];
-        float f0 = 55f;
-        float[] harm = { 1f, 0.6f, 0.42f, 0.3f, 0.22f, 0.14f };
-        int[] mult = { 1, 2, 3, 4, 6, 8 };
+        const float f0 = 100f;        // 點火頻率 100Hz ≈ 四缸 3000rpm
+        const int cylinders = 4;
         var rnd = new System.Random(7);
+
+        // 各缸的細微差異（點火時機與強度），真車不會完全平均
+        var cylGain = new float[cylinders];
+        var cylPhase = new float[cylinders];
+        for (int c = 0; c < cylinders; c++)
+        {
+            cylGain[c] = 0.85f + (float)rnd.NextDouble() * 0.3f;
+            cylPhase[c] = ((float)rnd.NextDouble() - 0.5f) * 0.02f;
+        }
+
+        // 排氣管共鳴用的雙極點濾波器狀態
+        float r1 = 0.9955f, w1 = 2f * Mathf.PI * 180f / Rate;   // 低頻筒身共鳴
+        float r2 = 0.988f, w2 = 2f * Mathf.PI * 720f / Rate;    // 中頻金屬感
+        float a1 = 2f * r1 * Mathf.Cos(w1), b1 = -r1 * r1;
+        float a2 = 2f * r2 * Mathf.Cos(w2), b2 = -r2 * r2;
+        float y1 = 0f, y2 = 0f, z1 = 0f, z2 = 0f;
+
+        float pulsePeriod = Rate / f0;
+
         for (int i = 0; i < n; i++)
         {
             float t = (float)i / Rate;
-            float v = 0f;
-            for (int h = 0; h < harm.Length; h++)
-                v += harm[h] * Mathf.Sin(2f * Mathf.PI * f0 * mult[h] * t);
-            // 點火脈動感
-            v *= 1f + 0.25f * Mathf.Sin(2f * Mathf.PI * f0 * 0.5f * t);
-            v += 0.05f * ((float)rnd.NextDouble() * 2f - 1f);
-            s[i] = (float)Math.Tanh(v * 0.9f);
+
+            // 產生點火脈衝串
+            float pulsePos = (i % pulsePeriod) / pulsePeriod;   // 0..1 在單次點火週期內
+            int cyl = (int)(i / pulsePeriod) % cylinders;
+            float shifted = Mathf.Repeat(pulsePos + cylPhase[cyl], 1f);
+
+            // 脈衝：極短的爆發（約佔週期 8%），之後靜默等下一次點火
+            float excite = shifted < 0.08f
+                ? cylGain[cyl] * Mathf.Exp(-shifted * 45f) * (1f - shifted / 0.08f)
+                : 0f;
+            excite += 0.02f * ((float)rnd.NextDouble() * 2f - 1f);   // 底噪
+
+            // 送進兩組共鳴器 → 排氣管音色
+            float o1 = excite + a1 * y1 + b1 * y2; y2 = y1; y1 = o1;
+            float o2 = excite + a2 * z1 + b2 * z2; z2 = z1; z1 = o2;
+
+            // 次諧波：四缸的「突突」低頻拍子
+            float sub = 0.35f * Mathf.Sin(2f * Mathf.PI * (f0 / cylinders) * t);
+
+            float v = o1 * 0.55f + o2 * 0.18f + sub;
+            s[i] = (float)Math.Tanh(v * 1.5f);
         }
-        Normalize(s, 0.75f);
+        Crossfade(s, Rate / 200);
+        Normalize(s, 0.78f);
         return s;
     }
 
@@ -89,6 +127,66 @@ public static class AudioSynth
             s[i] = v * env;
         }
         Normalize(s, 0.7f);
+        return s;
+    }
+
+    // ---------- 汽車喇叭：兩個不諧和音程疊在一起（實車就是雙音喇叭） ----------
+    static float[] Horn()
+    {
+        int n = (int)(Rate * 0.9f);
+        var s = new float[n];
+        // 常見雙音喇叭約 400Hz + 500Hz（大三度略偏），刻意不完全協和才刺耳
+        float[] f = { 400f, 500f };
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            float env = Mathf.Clamp01(t * 60f) * Mathf.Clamp01((0.9f - t) * 12f);
+            float v = 0f;
+            foreach (var freq in f)
+                for (int h = 1; h <= 6; h++)                    // 方波化 → 喇叭的金屬刺耳感
+                    v += Mathf.Sin(2f * Mathf.PI * freq * h * t) / h;
+            s[i] = (float)Math.Tanh(v * 0.5f) * env;
+        }
+        Normalize(s, 0.8f);
+        return s;
+    }
+
+    // ---------- 回火放砲：排氣管中未燃燒混合氣爆燃 ----------
+    /// 高轉收油或升檔時，未燃燒的油氣進到高溫排氣管引爆。
+    /// 聲音特徵：極銳利的爆裂前緣 + 低頻膨脹 + 劈啪碎響尾巴。
+    static float[] Backfire()
+    {
+        int n = (int)(Rate * 0.7f);
+        var s = new float[n];
+        var rnd = new System.Random(1337);
+
+        // 排氣管共鳴（比引擎聲的共鳴更長更響）
+        float r = 0.9975f, w = 2f * Mathf.PI * 150f / Rate;
+        float a = 2f * r * Mathf.Cos(w), b = -r * r;
+        float y1 = 0f, y2 = 0f;
+
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+
+            // 主爆：極短的高能量衝擊
+            float blast = Mathf.Exp(-t * 90f) * ((float)rnd.NextDouble() * 2f - 1f);
+
+            // 劈啪：連續的小爆，前 250ms，越後面越稀疏
+            float crackleEnv = Mathf.Exp(-t * 9f);
+            float crackle = 0f;
+            if (rnd.NextDouble() < 0.035 * crackleEnv * 12f)
+                crackle = ((float)rnd.NextDouble() * 2f - 1f) * crackleEnv;
+
+            float excite = blast * 1.4f + crackle * 0.9f;
+            float o = excite + a * y1 + b * y2; y2 = y1; y1 = o;
+
+            // 低頻膨脹（「砰」的體感）
+            float boom = 1.1f * Mathf.Exp(-t * 16f) * Mathf.Sin(2f * Mathf.PI * (75f * Mathf.Exp(-t * 12f) + 38f) * t);
+
+            s[i] = (float)Math.Tanh((o * 0.5f + boom) * 1.2f);
+        }
+        Normalize(s, 0.95f);
         return s;
     }
 

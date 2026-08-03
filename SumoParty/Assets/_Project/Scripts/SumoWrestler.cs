@@ -3,6 +3,10 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class SumoWrestler : MonoBehaviour
 {
+    // (命中位置, 是否重擊) — JuiceManager 訂閱做音效/粒子/頓幀
+    public static event System.Action<Vector3, bool> PushHit;
+    public static event System.Action<Vector3> Dodged;
+
     public SumoParams P;
     public string DisplayName = "力士";
     public SumoWrestler Opponent;
@@ -42,6 +46,8 @@ public class SumoWrestler : MonoBehaviour
             if (to.magnitude <= P.pushRange && Vector3.Angle(transform.forward, to) < P.pushAngle)
             {
                 Opponent.ReceivePush(to.normalized * P.pushForce * factor);
+                Vector3 mid = (transform.position + Opponent.transform.position) * 0.5f + Vector3.up * 0.9f;
+                PushHit?.Invoke(mid, factor > 0.75f);
                 return true;
             }
         }
@@ -53,6 +59,7 @@ public class SumoWrestler : MonoBehaviour
         if (!CanAct() || dodgeCd > 0f) return false;
         dodgeCd = P.dodgeCooldown;
         rb.AddForce(transform.right * Mathf.Sign(sideSign) * P.dodgeImpulse, ForceMode.VelocityChange);
+        Dodged?.Invoke(transform.position);
         return true;
     }
 

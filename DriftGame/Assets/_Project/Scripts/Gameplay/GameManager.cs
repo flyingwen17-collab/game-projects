@@ -24,7 +24,7 @@ public class GameManager : MonoBehaviour
     Canvas canvas;
     GameObject selectPanel;
     Text speedText, timeText, lastText, bestText, driftText, hintText;
-    Text scoreText, comboText, totalText, flashText;
+    Text scoreText, comboText, totalText, flashText, gearText, rpmText;
 
     GameObject resultPanel;
     Text resultTitle, resultBody;
@@ -72,6 +72,13 @@ public class GameManager : MonoBehaviour
         speedText = MakeText("Speed", new Vector2(1f, 0f), new Vector2(-60f, 60f), 76, TextAnchor.LowerRight);
         speedText.text = "0 km/h";
 
+        // 檔位（時速左邊的大字）與轉速
+        gearText = MakeText("Gear", new Vector2(1f, 0f), new Vector2(-330f, 52f), 92, TextAnchor.LowerRight);
+        gearText.text = "1";
+        rpmText = MakeText("Rpm", new Vector2(1f, 0f), new Vector2(-60f, 20f), 24, TextAnchor.LowerRight);
+        rpmText.color = new Color(1f, 1f, 1f, 0.8f);
+        rpmText.text = "";
+
         // 圈時（上中）
         timeText = MakeText("Time", new Vector2(0.5f, 1f), new Vector2(0f, -50f), 44, TextAnchor.UpperCenter);
         lastText = MakeText("Last", new Vector2(0.5f, 1f), new Vector2(0f, -100f), 26, TextAnchor.UpperCenter);
@@ -103,7 +110,8 @@ public class GameManager : MonoBehaviour
 
         // 操作提示（左下）
         hintText = MakeText("Hint", new Vector2(0f, 0f), new Vector2(30f, 30f), 22, TextAnchor.LowerLeft);
-        hintText.text = "WASD 駕駛   Space 手煞車甩尾   R 重置   1/2/3 換車   Esc 選單";
+        hintText.text = "WASD 駕駛（停住後長按 S 進倒檔）   Space 手煞車   Q 升檔 / E 降檔   T 自排手排\n"
+                      + "L 車燈（關→近燈→遠燈）   N 時段（正午→黃昏→夜晚）   R 重置   1/2/3 換車   Esc 選單";
         hintText.color = new Color(1f, 1f, 1f, 0.65f);
 
         BuildSelectPanel();
@@ -322,6 +330,13 @@ public class GameManager : MonoBehaviour
             if (kb.digit3Key.wasPressedThisFrame) StartRace(2);
             if (kb.escapeKey.wasPressedThisFrame) ShowSelect(!selectPanel.activeSelf);
             if (kb.spaceKey.wasPressedThisFrame && resultPanel.activeSelf) resultPanel.SetActive(false);
+
+            // N 切換時段（正午 → 黃昏 → 夜晚）
+            if (kb.nKey.wasPressedThisFrame && TimeOfDay.Instance != null)
+            {
+                TimeOfDay.Instance.Cycle();
+                Flash("時段：" + TimeOfDay.Instance.Label, new Color(0.7f, 0.85f, 1f));
+            }
         }
 
         if (resultPanel.activeSelf)
@@ -342,6 +357,13 @@ public class GameManager : MonoBehaviour
         if (current == null) return;
 
         speedText.text = Mathf.RoundToInt(current.SpeedKmh) + " km/h";
+
+        // 檔位與轉速（倒檔顯示 R，紅線區轉紅）
+        gearText.text = current.GearLabel;
+        gearText.color = current.IsReverse ? new Color(1f, 0.45f, 0.35f)
+                       : current.EngineRpm > current.spec.redlineRpm * 0.92f ? new Color(1f, 0.3f, 0.25f)
+                       : Color.white;
+        rpmText.text = Mathf.RoundToInt(current.EngineRpm) + " rpm" + (current.autoShift ? "  [AT]" : "  [MT]");
 
         var timer = RaceTimer.Instance;
         if (timer != null)

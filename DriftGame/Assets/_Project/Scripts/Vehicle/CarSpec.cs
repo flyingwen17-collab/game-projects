@@ -26,6 +26,10 @@ public class CarSpec
 
     [Header("傳動")]
     public float[] gearRatios = { 3.587f, 2.022f, 1.384f, 1.000f, 0.861f };
+    [Tooltip("倒檔齒比（實車通常略高於一檔）")]
+    public float reverseRatio = 3.484f;
+    [Tooltip("倒檔限速 km/h —— 實車倒檔齒比高、轉速拉不上去")]
+    public float reverseTopSpeedKmh = 35f;
     public float finalDrive = 4.30f;
     public float drivetrainEfficiency = 0.90f;
     public Drivetrain drivetrain = Drivetrain.RWD;
@@ -66,7 +70,7 @@ public class CarSpec
         wheelbaseM = 2.400f,
         trackWidthM = 1.355f,
         frontWeightRatio = 0.53f,
-        cgHeightM = 0.48f,
+        cgHeightM = 0.54f,
         dragArea = 0.66f,
         downforceCoef = 0.6f,
 
@@ -95,7 +99,7 @@ public class CarSpec
         brakeBiasFront = 0.62f,
         springRate = 33000f,
         damperRate = 3100f,
-        antiRollBarNm = 7000f,
+        antiRollBarNm = 3800f,
     };
 
     /// Subaru Impreza WRX STI（GDB）——四驅、重、高速穩定。
@@ -106,7 +110,7 @@ public class CarSpec
         wheelbaseM = 2.525f,
         trackWidthM = 1.485f,
         frontWeightRatio = 0.59f,
-        cgHeightM = 0.53f,
+        cgHeightM = 0.58f,
         dragArea = 0.78f,
         downforceCoef = 1.1f,
 
@@ -136,7 +140,7 @@ public class CarSpec
         brakeBiasFront = 0.64f,
         springRate = 52000f,
         damperRate = 4600f,
-        antiRollBarNm = 13000f,
+        antiRollBarNm = 7200f,
     };
 
     /// Honda Fit RS（GK5）——前驅、靈活、不好甩但好開。
@@ -147,7 +151,7 @@ public class CarSpec
         wheelbaseM = 2.530f,
         trackWidthM = 1.470f,
         frontWeightRatio = 0.62f,
-        cgHeightM = 0.55f,
+        cgHeightM = 0.60f,
         dragArea = 0.72f,
         downforceCoef = 0.5f,
 
@@ -176,7 +180,7 @@ public class CarSpec
         brakeBiasFront = 0.68f,
         springRate = 38000f,
         damperRate = 3400f,
-        antiRollBarNm = 9500f,
+        antiRollBarNm = 5200f,
     };
 
     /// 引擎扭力曲線：怠速偏低 → 峰值 → 紅線衰退，用兩段拋物線近似實車曲線。

@@ -10,6 +10,12 @@ public class EngineAudio : MonoBehaviour
     public AudioClip engineClip;
     public AudioClip skidClip;
     public AudioClip brakeClip;
+    public AudioClip backfireClip;
+
+    [Header("回火")]
+    public float backfireVolume = 0.85f;
+    [Tooltip("排氣火焰粒子（可留空）")]
+    public ParticleSystem exhaustFlame;
 
     [Header("引擎")]
     public float minPitch = 0.55f;
@@ -26,6 +32,7 @@ public class EngineAudio : MonoBehaviour
     AudioSource engineSrc, skidSrc, oneShotSrc;
     bool wasBraking;
     int lastGear = 1;
+    float backfireCooldown;
 
     void Awake()
     {
@@ -67,9 +74,15 @@ public class EngineAudio : MonoBehaviour
         float targetVol = active ? engineVolume * load : 0f;
         engineSrc.volume = Mathf.Lerp(engineSrc.volume, targetVol, 8f * Time.deltaTime);
 
-        // 升檔時補一聲排氣爆音
-        if (active && car.Gear > lastGear && brakeClip != null)
-            oneShotSrc.PlayOneShot(brakeClip, 0.18f);
+        // 回火放砲：高轉收油或升檔觸發，音高隨機化避免重複感
+        if (active && car.BackfireTriggered && backfireClip != null && backfireCooldown <= 0f)
+        {
+            oneShotSrc.pitch = Random.Range(0.88f, 1.18f);
+            oneShotSrc.PlayOneShot(backfireClip, backfireVolume * Random.Range(0.7f, 1f));
+            if (exhaustFlame != null) exhaustFlame.Emit(Random.Range(10, 22));
+            backfireCooldown = 0.18f;
+        }
+        if (backfireCooldown > 0f) backfireCooldown -= Time.deltaTime;
         lastGear = car.Gear;
 
         // ---- 輪胎：用抓地力使用率，真的打滑才叫 ----

@@ -110,10 +110,10 @@ public static class CarFactory
         Part(car, "BumperR", new Vector3(0f, bodyY - bodySize.y * 0.35f, -halfL - 0.06f), new Vector3(bodySize.x * 0.98f, 0.22f, 0.14f), darkMat, false);
         var headMat = Mat("Headlight", new Color(1f, 0.97f, 0.85f), 0.9f);
         var tailMat = Mat("Taillight", new Color(0.8f, 0.06f, 0.05f), 0.85f);
-        Part(car, "HeadL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
-        Part(car, "HeadR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
-        Part(car, "TailL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
-        Part(car, "TailR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
+        var headL = Part(car, "HeadL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
+        var headR = Part(car, "HeadR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
+        var tailL = Part(car, "TailL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
+        var tailR = Part(car, "TailR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
 
         // ---- 輪子 ----
         float axleF = halfL - 0.72f;
@@ -198,6 +198,12 @@ public static class CarFactory
         effects.allWheels = colliders;
         effects.smokeTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Smoke.png");
 
+        var lights = car.AddComponent<CarLights>();
+        lights.headlightRenderers = new[] { headL.GetComponent<Renderer>(), headR.GetComponent<Renderer>() };
+        lights.taillightRenderers = new[] { tailL.GetComponent<Renderer>(), tailR.GetComponent<Renderer>() };
+        lights.headlightLocalLeft = headL.transform.localPosition + new Vector3(0f, 0f, 0.1f);
+        lights.headlightLocalRight = headR.transform.localPosition + new Vector3(0f, 0f, 0.1f);
+
         var impact = car.AddComponent<CollisionImpact>();
         impact.sparkTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Spark.png");
         impact.impactClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/impact.wav");
@@ -206,8 +212,66 @@ public static class CarFactory
         audio.engineClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_loop.wav");
         audio.skidClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/skid_loop.wav");
         audio.brakeClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/brake_squeal.wav");
+        audio.backfireClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire.wav");
+        audio.exhaustFlame = BuildExhaustFlame(car, -halfL - 0.05f);
 
         return car;
+    }
+
+    /// 排氣管回火火焰：只在回火時 Emit，平時不噴。
+    static ParticleSystem BuildExhaustFlame(GameObject car, float rearZ)
+    {
+        var go = new GameObject("ExhaustFlame");
+        go.transform.SetParent(car.transform, false);
+        go.transform.localPosition = new Vector3(0.32f, 0.28f, rearZ);
+        go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);   // 朝車尾噴
+
+        var ps = go.AddComponent<ParticleSystem>();
+        var main = ps.main;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.06f, 0.16f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(5f, 11f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.18f, 0.42f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(1f, 0.75f, 0.35f), new Color(1f, 0.45f, 0.12f));
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 80;
+        main.playOnAwake = false;
+
+        var emission = ps.emission;
+        emission.enabled = true;
+        emission.rateOverTime = 0f;
+
+        var shape = ps.shape;
+        shape.enabled = true;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 12f;
+        shape.radius = 0.04f;
+
+        var col = ps.colorOverLifetime;
+        col.enabled = true;
+        var grad = new Gradient();
+        grad.SetKeys(
+            new[] { new GradientColorKey(new Color(0.75f, 0.85f, 1f), 0f),      // 根部偏藍
+                    new GradientColorKey(new Color(1f, 0.6f, 0.15f), 0.4f),
+                    new GradientColorKey(new Color(0.5f, 0.12f, 0.02f), 1f) },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        col.color = grad;
+
+        var renderer = ps.GetComponent<ParticleSystemRenderer>();
+        var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+        var flameTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Flame.png");
+        if (flameTex != null) mat.SetTexture("_BaseMap", flameTex);
+        mat.SetColor("_BaseColor", Color.white);
+        // 相加混合 → 會發光並吃到 Bloom
+        mat.SetFloat("_Surface", 1f);
+        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+        mat.SetInt("_ZWrite", 0);
+        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        renderer.material = mat;
+
+        return ps;
     }
 
     static GameObject Part(GameObject parent, string name, Vector3 localPos, Vector3 size, Material mat, bool keepCollider)

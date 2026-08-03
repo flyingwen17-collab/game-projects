@@ -4,6 +4,9 @@ using UnityEngine;
 // UI 全用 OnGUI（P1 規定零美術）。
 public class MatchManager : MonoBehaviour
 {
+    public static event System.Action RoundStarted;
+    public static event System.Action<Vector3> RingOutAt;
+
     public SumoParams P;
     public SumoWrestler P1;
     public SumoWrestler P2;
@@ -33,6 +36,7 @@ public class MatchManager : MonoBehaviour
 
     void EnterIntro()
     {
+        Time.timeScale = 1f; // 慢動作/頓幀保險
         state = State.Intro;
         stateTimer = 1.6f;
         CurrentRadius = BaseRadius;
@@ -61,6 +65,7 @@ public class MatchManager : MonoBehaviour
                     state = State.Fight;
                     fightTime = 0f;
                     P1.ControlLocked = P2.ControlLocked = false;
+                    RoundStarted?.Invoke();
                 }
                 break;
 
@@ -108,6 +113,7 @@ public class MatchManager : MonoBehaviour
             state = State.End;
             stateTimer = 1.2f; // 防止勝負瞬間誤觸立刻重開
             P1.ControlLocked = P2.ControlLocked = true;
+            RingOutAt?.Invoke(w.transform.position);
         }
     }
 
