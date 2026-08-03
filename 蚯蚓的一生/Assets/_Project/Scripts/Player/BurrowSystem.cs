@@ -93,8 +93,22 @@ public class BurrowSystem : MonoBehaviour
         var m = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         m.name = "BurrowMound";
         Destroy(m.GetComponent<Collider>());
-        m.transform.localScale = new Vector3(0.8f, 0.18f, 0.8f);
-        m.GetComponent<Renderer>().sharedMaterial = RuntimeArt.Mat(new Color(0.35f, 0.22f, 0.12f));
+        m.transform.localScale = new Vector3(1.05f, 0.22f, 1.05f);
+        // 土丘用 AI 泥土貼圖，更像真的隆起的土
+        var dirtTex = Resources.Load<Texture2D>("Art/dirt_tile");
+        if (dirtTex != null)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            var mat = new Material(shader);
+            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", dirtTex);
+            mat.mainTexture = dirtTex;
+            m.GetComponent<Renderer>().sharedMaterial = mat;
+        }
+        else
+        {
+            m.GetComponent<Renderer>().sharedMaterial = RuntimeArt.Mat(new Color(0.35f, 0.22f, 0.12f));
+        }
         m.SetActive(false);
         mound = m.transform;
     }

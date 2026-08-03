@@ -18,6 +18,12 @@ public static class CarFactory
         rb.angularDrag = 0.6f;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
+        // 規格先決定：車身幾何、WheelCollider、Rigidbody 全部以它為準，
+        // 避免物理輪徑與視覺輪徑對不上（會造成輪胎陷進地面或懸空）。
+        CarSpec spec = style == Style.WRX ? CarSpec.WRX()
+                     : style == Style.FIT ? CarSpec.FIT()
+                     : CarSpec.AE86();
+
         float wheelRadius;
         Vector3 bodySize;
         Material bodyMat, accentMat, wheelMat;
@@ -51,6 +57,10 @@ public static class CarFactory
                 wheelMat = Mat("DarkWheel", new Color(0.15f, 0.15f, 0.16f), 0.4f);
                 break;
         }
+
+        // 一律採用規格的真實胎徑（由胎規換算），覆寫上面的美術暫定值
+        wheelRadius = spec.wheelRadiusM;
+        rb.mass = spec.massKg;
 
         // ---- 車身 ----
         float bodyY = 0.32f + bodySize.y * 0.5f;
@@ -166,41 +176,18 @@ public static class CarFactory
 
         // ---- 元件 ----
         car.AddComponent<DriftDetector>();
+        car.AddComponent<DriftScoring>();
         var ctrl = car.AddComponent<CarController>();
         ctrl.wheelFL = colliders[0];
         ctrl.wheelFR = colliders[1];
         ctrl.wheelRL = colliders[2];
         ctrl.wheelRR = colliders[3];
 
-        switch (style)
-        {
-            case Style.WRX:
-                ctrl.drivetrain = Drivetrain.AWD;
-                ctrl.awdFrontShare = 0.45f;
-                ctrl.maxMotorTorque = 3300f;
-                ctrl.topSpeedKmh = 200f;
-                ctrl.rearStiffness = 1.6f;
-                ctrl.rearDriftStiffness = 0.95f;
-                ctrl.frontStiffness = 1.75f;
-                break;
-            case Style.FIT:
-                ctrl.drivetrain = Drivetrain.FWD;
-                ctrl.maxMotorTorque = 2100f;
-                ctrl.topSpeedKmh = 170f;
-                ctrl.frontStiffness = 1.85f;
-                ctrl.rearStiffness = 1.7f;
-                ctrl.rearDriftStiffness = 0.95f;
-                ctrl.maxSteerLowSpeed = 35f;
-                break;
-            default: // AE86：最會甩
-                ctrl.drivetrain = Drivetrain.RWD;
-                ctrl.maxMotorTorque = 2400f;
-                ctrl.topSpeedKmh = 180f;
-                ctrl.rearStiffness = 1.45f;
-                ctrl.rearDriftStiffness = 0.8f;
-                ctrl.rearHandbrakeStiffness = 0.45f;
-                break;
-        }
+        // 規格全部採用市售車公開真實數據（見 CarSpec）
+        ctrl.spec = spec;
+        ctrl.counterSteerAssist = style == Style.WRX ? 0.28f   // 四驅本來就穩，輔助給少一點
+                                : style == Style.FIT ? 0.22f   // 前驅甩尾靠慣性，輔助幫不上太多
+                                : 0.38f;                       // 後驅最好甩，也最需要反打
 
         var visuals = car.AddComponent<CarVisuals>();
         visuals.wheels = new CarVisuals.WheelPair[4];
@@ -208,8 +195,12 @@ public static class CarFactory
             visuals.wheels[i] = new CarVisuals.WheelPair { collider = colliders[i], mesh = meshes[i] };
 
         var effects = car.AddComponent<TireEffects>();
-        effects.rearLeft = colliders[2];
-        effects.rearRight = colliders[3];
+        effects.allWheels = colliders;
+        effects.smokeTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Smoke.png");
+
+        var impact = car.AddComponent<CollisionImpact>();
+        impact.sparkTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Spark.png");
+        impact.impactClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/impact.wav");
 
         var audio = car.AddComponent<EngineAudio>();
         audio.engineClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_loop.wav");

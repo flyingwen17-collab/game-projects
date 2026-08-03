@@ -29,7 +29,10 @@ public class FoodSpawner : MonoBehaviour
     void Spawn()
     {
         float roll = Random.value;
-        if (roll < 0.12f && TrySpawnRareNearChicken()) return;
+
+        // 特殊飼料（無敵吃雞）：場上最多一顆，機率低
+        if (roll < 0.07f && !PowerFeedOnField() && TrySpawnPowerFeed()) return;
+        if (roll < 0.19f && TrySpawnRareNearChicken()) return;
 
         bool berry = roll > 0.75f;
         for (int attempt = 0; attempt < 15; attempt++)
@@ -47,6 +50,31 @@ public class FoodSpawner : MonoBehaviour
                 Make(pos, 0.35f, new Color(0.5f, 0.8f, 0.25f), 50, 30f);
             return;
         }
+    }
+
+    bool PowerFeedOnField()
+    {
+        foreach (var f in FindObjectsOfType<FoodPickup>())
+            if (f.isPowerFeed) return true;
+        return false;
+    }
+
+    bool TrySpawnPowerFeed()
+    {
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            Vector3 pos = new Vector3(
+                Random.Range(-areaHalf.x, areaHalf.x), 0.28f,
+                Random.Range(-areaHalf.y, areaHalf.y));
+            if (Physics.Raycast(pos + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 6f) &&
+                hit.collider.CompareTag("HardGround")) continue;
+
+            var feed = Make(pos, 0.45f, new Color(1f, 0.45f, 0.1f), 100, 40f);
+            feed.name = "PowerFeed";
+            feed.GetComponent<FoodPickup>().isPowerFeed = true;
+            return true;
+        }
+        return false;
     }
 
     bool TrySpawnRareNearChicken()

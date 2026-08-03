@@ -6,6 +6,7 @@ public class HUDOnGui : MonoBehaviour
     Font font;
     GUIStyle scoreStyle, hintStyle, comboStyle, skillStyle, overTitle, overBody, closeCallStyle;
     Texture2D white;
+    Texture2D icons; // AI 生成的 3x3 圖示集
     WormStamina stamina;
     BurrowSystem burrow;
     WormSkills skills;
@@ -16,6 +17,7 @@ public class HUDOnGui : MonoBehaviour
         white = new Texture2D(1, 1);
         white.SetPixel(0, 0, Color.white);
         white.Apply();
+        icons = Resources.Load<Texture2D>("Art/ui_icons");
 
         var w = GameObject.FindGameObjectWithTag("Player");
         if (w != null)
@@ -49,10 +51,34 @@ public class HUDOnGui : MonoBehaviour
             if (w != null) skills = w.GetComponent<WormSkills>();
         }
 
+        // 被追時：畫面邊緣紅色脈動（危險感）
+        if (gm.State == GameState.Playing && ChickenAI.ChaserCount > 0)
+        {
+            float pulse = 0.1f + 0.08f * Mathf.Sin(Time.unscaledTime * 7f);
+            GUI.color = new Color(1f, 0.1f, 0.05f, pulse);
+            float b = 26f;
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, b), white);
+            GUI.DrawTexture(new Rect(0, Screen.height - b, Screen.width, b), white);
+            GUI.DrawTexture(new Rect(0, 0, b, Screen.height), white);
+            GUI.DrawTexture(new Rect(Screen.width - b, 0, b, Screen.height), white);
+            GUI.color = Color.white;
+        }
+
         // 分數
         GUI.Label(new Rect(20, 15, 460, 40), $"分數  {Mathf.FloorToInt(gm.Score)}", scoreStyle);
-        GUI.Label(new Rect(20, 48, 460, 30),
-            $"存活 {gm.SurvivalTime:0.0} 秒   食物 {gm.FoodEaten}   險過 {gm.CloseCalls}", hintStyle);
+        var wormBody = skills != null ? skills.GetComponent<WormBody>() : null;
+        string bodyInfo = wormBody != null ? $"   身體 {wormBody.SegmentCount} 節" : "";
+        GUI.Label(new Rect(20, 48, 520, 30),
+            $"存活 {gm.SurvivalTime:0.0} 秒   食物 {gm.FoodEaten}   險過 {gm.CloseCalls}   吃雞 {gm.ChickensEaten}{bodyInfo}", hintStyle);
+
+        // 無敵模式倒數
+        if (skills != null && skills.PowerActive)
+        {
+            GUI.Label(new Rect(Screen.width / 2f - 250, 60, 500, 44), "無敵模式！去吃雞！", comboStyle);
+            GUI.color = new Color(1f, 0.7f, 0.1f, 0.9f);
+            GUI.DrawTexture(new Rect(Screen.width / 2f - 100, 102, 200f * (skills.PowerTimeLeft / skills.powerDuration), 8), white);
+            GUI.color = Color.white;
+        }
 
         // 連吃倍率
         if (gm.ComboStreak > 1)
@@ -70,22 +96,25 @@ public class HUDOnGui : MonoBehaviour
             float x = (Screen.width - barW) / 2f, y = Screen.height - 78f;
             GUI.color = new Color(0f, 0f, 0f, 0.5f);
             GUI.DrawTexture(new Rect(x - 2, y - 2, barW + 4, barH + 4), white);
-            GUI.color = stamina.Percent > 0.3f ? new Color(1f, 0.55f, 0.75f) : new Color(1f, 0.25f, 0.2f);
+            GUI.color = stamina.Exhausted ? new Color(0.55f, 0.55f, 0.55f) :
+                        stamina.Percent > 0.3f ? new Color(1f, 0.55f, 0.75f) : new Color(1f, 0.25f, 0.2f);
             GUI.DrawTexture(new Rect(x, y, barW * stamina.Percent, barH), white);
             GUI.color = Color.white;
+            if (stamina.Exhausted)
+                GUI.Label(new Rect(x + barW / 2f - 40, y - 22, 200, 22), "力竭！無法衝刺", hintStyle);
 
             string hint = burrow != null && burrow.IsBurrowed
                 ? "地下潛行中… 放開 Space 出土｜Shift 土遁突進"
-                : "按住 Space 鑽土｜Shift 衝刺｜F 誘餌｜Q/E 視角";
+                : "按住 Space 鑽土｜Shift 衝刺｜F 斷尾誘餌｜C 切換視角｜Q/E 旋轉";
             GUI.Label(new Rect(x, y + 20, barW + 240, 24), hint, hintStyle);
 
             // 技能冷卻格
             if (skills != null)
             {
-                DrawSkill(new Rect(x + barW + 20, y - 14, 74, 44), "誘餌 F",
-                    skills.DecoyCdLeft, skills.decoyCooldown);
+                DrawSkill(new Rect(x + barW + 20, y - 14, 74, 44), "斷尾 F",
+                    skills.TailCdLeft, skills.tailDropCooldown, 5);  // 螺旋圖示
                 DrawSkill(new Rect(x + barW + 102, y - 14, 74, 44), "突進",
-                    skills.DashCdLeft, skills.dashCooldown);
+                    skills.DashCdLeft, skills.dashCooldown, 4);      // 閃電圖示
             }
         }
 
@@ -107,12 +136,12 @@ public class HUDOnGui : MonoBehaviour
             float cx = Screen.width / 2f, cy = Screen.height / 2f;
             GUI.Label(new Rect(cx - 300, cy - 90, 600, 60), "你被吃掉了！", overTitle);
             GUI.Label(new Rect(cx - 300, cy - 12, 600, 40),
-                $"總分 {Mathf.FloorToInt(gm.Score)}   存活 {gm.SurvivalTime:0.0} 秒   食物 {gm.FoodEaten}   險過 {gm.CloseCalls}", overBody);
+                $"總分 {Mathf.FloorToInt(gm.Score)}   存活 {gm.SurvivalTime:0.0} 秒   食物 {gm.FoodEaten}   險過 {gm.CloseCalls}   吃雞 {gm.ChickensEaten}", overBody);
             GUI.Label(new Rect(cx - 300, cy + 38, 600, 40), "按 R 再來一次", overBody);
         }
     }
 
-    void DrawSkill(Rect r, string label, float cdLeft, float cdTotal)
+    void DrawSkill(Rect r, string label, float cdLeft, float cdTotal, int iconIndex)
     {
         bool ready = cdLeft <= 0f;
         GUI.color = new Color(0f, 0f, 0f, 0.5f);
@@ -121,6 +150,20 @@ public class HUDOnGui : MonoBehaviour
         float fill = ready ? 1f : 1f - cdLeft / cdTotal;
         GUI.DrawTexture(new Rect(r.x, r.y + r.height * (1f - fill), r.width, r.height * fill), white);
         GUI.color = Color.white;
-        GUI.Label(r, ready ? label : $"{cdLeft:0.0}s", skillStyle);
+
+        // AI 圖示集的第 iconIndex 格（3x3）
+        if (icons != null)
+        {
+            int cx = iconIndex % 3, cy = iconIndex / 3;
+            var uv = new Rect(cx / 3f, 1f - (cy + 1) / 3f, 1f / 3f, 1f / 3f);
+            float iconSize = r.height - 8f;
+            GUI.DrawTextureWithTexCoords(new Rect(r.x + 4, r.y + 4, iconSize, iconSize), icons, uv);
+            GUI.Label(new Rect(r.x + iconSize + 6, r.y, r.width - iconSize - 6, r.height),
+                ready ? label : $"{cdLeft:0.0}s", skillStyle);
+        }
+        else
+        {
+            GUI.Label(r, ready ? label : $"{cdLeft:0.0}s", skillStyle);
+        }
     }
 }

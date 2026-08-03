@@ -14,6 +14,8 @@ public class WormController : MonoBehaviour
     public bool IsSprinting { get; private set; }
     /// 雞的震動感知半徑：衝刺或地下移動時會發出「震動」
     public float NoiseRadius { get; private set; }
+    /// 速度倍率（無敵模式加速用）
+    public float SpeedMultiplier { get; set; } = 1f;
 
     Rigidbody rb;
     BurrowSystem burrow;
@@ -69,7 +71,8 @@ public class WormController : MonoBehaviour
         else inputDir = raw;
 
         bool moving = raw.sqrMagnitude > 0.01f;
-        IsSprinting = !burrow.IsBurrowed && kb.leftShiftKey.isPressed && moving && stamina.Current > 0.5f;
+        IsSprinting = !burrow.IsBurrowed && kb.leftShiftKey.isPressed && moving &&
+                      stamina.Current > 0.5f && !stamina.Exhausted;
 
         if (burrow.IsBurrowed) NoiseRadius = moving ? 3f : 0f;
         else NoiseRadius = IsSprinting ? 6f : 0f;
@@ -77,7 +80,7 @@ public class WormController : MonoBehaviour
 
     void FixedUpdate()
     {
-        float speed = burrow.IsBurrowed ? burrowSpeed : (IsSprinting ? sprintSpeed : crawlSpeed);
+        float speed = (burrow.IsBurrowed ? burrowSpeed : (IsSprinting ? sprintSpeed : crawlSpeed)) * SpeedMultiplier;
 
         if (dashTimer > 0f)
         {

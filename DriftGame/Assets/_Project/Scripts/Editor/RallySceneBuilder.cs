@@ -76,7 +76,8 @@ public static class RallySceneBuilder
     // ---------------- 環境：草地、山、樹 ----------------
     static void BuildEnvironment()
     {
-        var grassMat = TexMat("Grass", GrassTexture(), 140f);
+        // Plane 預設 10 單位、縮放 140 → 1400m 見方；貼圖每 4m 重複一次
+        var grassMat = TexMat("Grass", GrassTexture(), 350f, 0.04f);
         var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.name = "Grass";
         ground.transform.position = new Vector3(75f, 0f, 0f);
@@ -200,9 +201,11 @@ public static class RallySceneBuilder
             Vector3 center = s[idx] + Vector3.up * 0.03f;
             verts[i * 2] = center - right * RoadWidth * 0.5f;
             verts[i * 2 + 1] = center + right * RoadWidth * 0.5f;
-            if (i > 0) v += Vector3.Distance(s[idx], s[(idx - 1 + n) % n]) / 9f;
+            // UV 以「公尺」為單位，貼圖每 3.2 公尺重複一次 —— 顆粒大小才符合真實比例
+            if (i > 0) v += Vector3.Distance(s[idx], s[(idx - 1 + n) % n]) / 3.2f;
+            float uSpan = RoadWidth / 3.2f;
             uvs[i * 2] = new Vector2(0f, v);
-            uvs[i * 2 + 1] = new Vector2(1f, v);
+            uvs[i * 2 + 1] = new Vector2(uSpan, v);
         }
 
         for (int i = 0; i < n; i++)
@@ -224,13 +227,81 @@ public static class RallySceneBuilder
 
         var road = new GameObject("Road");
         road.AddComponent<MeshFilter>().sharedMesh = mesh;
-        road.AddComponent<MeshRenderer>().sharedMaterial = TexMat("Asphalt", AsphaltTexture(), 0f);
+        road.AddComponent<MeshRenderer>().sharedMaterial = TexMat("Asphalt", AsphaltTexture(), 1f, 0.22f);
         road.AddComponent<MeshCollider>().sharedMesh = mesh;
+        road.isStatic = true;
+
+        BuildKerbs(s);
+    }
+
+    /// 路緣石：沿賽道兩側鋪一條紅白帶，是賽道最容易辨識的視覺特徵。
+    static void BuildKerbs(List<Vector3> s)
+    {
+        int n = s.Count;
+        var kerbMat = TexMat("Kerb", KerbTexture(), 1f, 0.30f);
+        var root = new GameObject("Kerbs");
+        root.isStatic = true;
+
+        foreach (float side in new[] { -1f, 1f })
+        {
+            var verts = new Vector3[(n + 1) * 2];
+            var uvs = new Vector2[(n + 1) * 2];
+            var tris = new int[n * 6];
+            float v = 0f;
+            const float kerbWidth = 0.85f;
+
+            for (int i = 0; i <= n; i++)
+            {
+                int idx = i % n;
+                Vector3 tan = Tangent(s, idx);
+                Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+                Vector3 inner = s[idx] + right * side * (RoadWidth * 0.5f) + Vector3.up * 0.05f;
+                Vector3 outer = inner + right * side * kerbWidth + Vector3.up * 0.055f;
+                verts[i * 2] = inner;
+                verts[i * 2 + 1] = outer;
+                if (i > 0) v += Vector3.Distance(s[idx], s[(idx - 1 + n) % n]) / 1.6f;
+                uvs[i * 2] = new Vector2(0f, v);
+                uvs[i * 2 + 1] = new Vector2(1f, v);
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                // 纏繞方向決定面朝上還是朝下。頂點的偏移方向是 right*side，
+                // side 變號時外積跟著變號，所以左右兩側的纏繞必須相反，
+                // 且右側要和路面 mesh 用同一種（路面是可見的，拿它當基準）。
+                int t = i * 6, a = i * 2;
+                if (side > 0f)
+                {
+                    tris[t] = a; tris[t + 1] = a + 2; tris[t + 2] = a + 1;
+                    tris[t + 3] = a + 1; tris[t + 4] = a + 2; tris[t + 5] = a + 3;
+                }
+                else
+                {
+                    tris[t] = a; tris[t + 1] = a + 1; tris[t + 2] = a + 2;
+                    tris[t + 3] = a + 1; tris[t + 4] = a + 3; tris[t + 5] = a + 2;
+                }
+            }
+
+            var mesh = new Mesh { name = "Kerb" + (side < 0 ? "L" : "R") };
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.vertices = verts;
+            mesh.uv = uvs;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            AssetDatabase.CreateAsset(mesh, ScenesDir + "/" + mesh.name + ".asset");
+
+            var go = new GameObject(mesh.name);
+            go.transform.SetParent(root.transform);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = kerbMat;
+            go.isStatic = true;
+        }
     }
 
     static void BuildWalls(List<Vector3> s)
     {
-        var wallMat = ColorMat("Barrier", new Color(0.75f, 0.75f, 0.78f), 0.15f);
+        var wallMat = TexMat("Barrier", GuardrailTexture(), 1f, 0.55f, new Vector2(2.5f, 1f));
         var root = new GameObject("Walls");
         int n = s.Count;
         int step = 2;
@@ -352,45 +423,33 @@ public static class RallySceneBuilder
     }
 
     // ---------------- 後製 ----------------
+    /// 後處理、天空、光照、抗鋸齒全部交給 SceneLook。
+    /// （舊版在這裡自建 VolumeProfile 但漏了 AddObjectToAsset，
+    ///   元件沒寫進 .asset 檔，後處理實際上完全沒生效。）
     static void BuildPostProcessing()
     {
-        var profile = ScriptableObject.CreateInstance<VolumeProfile>();
-        AssetDatabase.CreateAsset(profile, SettingsDir + "/RallyPostFX.asset");
-
-        var bloom = profile.Add<Bloom>(true);
-        bloom.intensity.Override(0.55f);
-        bloom.threshold.Override(1.0f);
-
-        var vignette = profile.Add<Vignette>(true);
-        vignette.intensity.Override(0.24f);
-
-        var tone = profile.Add<Tonemapping>(true);
-        tone.mode.Override(TonemappingMode.ACES);
-
-        var color = profile.Add<ColorAdjustments>(true);
-        color.postExposure.Override(0.15f);
-        color.saturation.Override(12f);
-        color.contrast.Override(8f);
-
-        var volumeGo = new GameObject("Global Volume");
-        var volume = volumeGo.AddComponent<Volume>();
-        volume.isGlobal = true;
-        volume.profile = profile;
-
-        AssetDatabase.SaveAssets();
+        SceneLook.ApplyAll();
     }
 
     // ---------------- 程式產生貼圖與材質 ----------------
-    static Material TexMat(string name, Texture2D tex, float tiling)
+    /// 每次重建都覆寫材質，確保換過的貼圖會生效（舊版遇到既有檔就直接沿用，導致貼圖換不掉）。
+    static Material TexMat(string name, Texture2D tex, float tiling, float smoothness = 0.06f, Vector2 tilingUV = default)
     {
         string path = MaterialsDir + "/" + name + ".mat";
-        var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (existing != null) return existing;
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (mat == null)
+        {
+            mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            AssetDatabase.CreateAsset(mat, path);
+        }
+        mat.shader = Shader.Find("Universal Render Pipeline/Lit");
         mat.SetTexture("_BaseMap", tex);
-        mat.SetFloat("_Smoothness", 0.05f);
-        if (tiling > 1f) mat.SetTextureScale("_BaseMap", new Vector2(tiling, tiling));
-        AssetDatabase.CreateAsset(mat, path);
+        mat.SetColor("_BaseColor", Color.white);
+        mat.SetFloat("_Smoothness", smoothness);
+        mat.SetFloat("_Metallic", 0f);
+        Vector2 scale = tilingUV != default ? tilingUV : new Vector2(Mathf.Max(1f, tiling), Mathf.Max(1f, tiling));
+        mat.SetTextureScale("_BaseMap", scale);
+        EditorUtility.SetDirty(mat);
         return mat;
     }
 
@@ -417,43 +476,18 @@ public static class RallySceneBuilder
         return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
     }
 
-    static Texture2D AsphaltTexture()
+    /// 載入 Codex 生成的實拍質感貼圖；找不到才退回舊的程式生成版。
+    static Texture2D LoadTex(string name, string legacy)
     {
-        var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturesDir + "/Asphalt.png");
-        if (existing != null) return existing;
-        int size = 256;
-        var tex = new Texture2D(size, size);
-        var rnd = new System.Random(5);
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float g = 0.16f + (float)rnd.NextDouble() * 0.05f;
-                float u = (float)x / size;
-                // 路緣白線
-                if (u < 0.035f || u > 0.965f) g = 0.85f + (float)rnd.NextDouble() * 0.1f;
-                tex.SetPixel(x, y, new Color(g, g, g * 1.03f));
-            }
-        tex.Apply();
-        return SaveTexture("Asphalt", tex);
+        var t = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturesDir + "/" + name + ".png");
+        if (t != null) return t;
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(TexturesDir + "/" + legacy + ".png");
     }
 
-    static Texture2D GrassTexture()
-    {
-        var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturesDir + "/GrassTex.png");
-        if (existing != null) return existing;
-        int size = 256;
-        var tex = new Texture2D(size, size);
-        var rnd = new System.Random(6);
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float v = (float)rnd.NextDouble();
-                var c = new Color(0.2f + v * 0.08f, 0.42f + v * 0.12f, 0.16f + v * 0.06f);
-                tex.SetPixel(x, y, c);
-            }
-        tex.Apply();
-        return SaveTexture("GrassTex", tex);
-    }
+    static Texture2D AsphaltTexture() { return LoadTex("TRK_Asphalt", "Asphalt"); }
+    static Texture2D GrassTexture() { return LoadTex("TRK_Grass", "GrassTex"); }
+    static Texture2D KerbTexture() { return LoadTex("TRK_Kerb", "CheckerTex"); }
+    static Texture2D GuardrailTexture() { return LoadTex("TRK_Guardrail", "Asphalt"); }
 
     static Texture2D CheckerTexture()
     {

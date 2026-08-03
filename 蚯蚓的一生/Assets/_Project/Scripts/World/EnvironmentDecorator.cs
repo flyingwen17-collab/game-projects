@@ -5,29 +5,212 @@ using UnityEngine.Rendering.Universal;
 /// 場景美化：天空、霧、後製、地面貼圖、草、石、樹、木圍籬（全程式生成）
 public class EnvironmentDecorator : MonoBehaviour
 {
+    // 固定色盤：共用材質才能合批（效能關鍵——之前每株草一份材質是卡頓主因）
+    static readonly Color[] GrassPalette =
+    {
+        new Color(0.24f, 0.45f, 0.16f),
+        new Color(0.3f, 0.52f, 0.19f),
+        new Color(0.36f, 0.58f, 0.22f),
+    };
+    static readonly Color[] LeafPalette =
+    {
+        new Color(0.18f, 0.4f, 0.16f),
+        new Color(0.24f, 0.48f, 0.18f),
+        new Color(0.3f, 0.52f, 0.2f),
+    };
+    static readonly Color[] RockPalette =
+    {
+        new Color(0.42f, 0.42f, 0.45f),
+        new Color(0.5f, 0.5f, 0.53f),
+    };
+
     void Start()
     {
         Random.InitState(20260802);
         SkyAndLight();
         PostFx();
+        RenderTuning();
         GroundTextures();
-        ScatterGrass(260);
+        ScatterGrass(230);
         ScatterRocks(22);
         PlantTrees(12);
         FenceMakeover();
+        BuildFarm();
+        SpawnButterflies(6);
+        BatchStatics();
+    }
+
+    void RenderTuning()
+    {
+        Application.targetFrameRate = 60;
+        var urp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+        if (urp != null)
+        {
+            urp.msaaSampleCount = 4;
+            urp.shadowDistance = 45f; // 陰影集中在近處，更銳利也更省
+        }
+    }
+
+    void SpawnButterflies(int count)
+    {
+        Color[] colors =
+        {
+            new Color(1f, 0.75f, 0.2f),
+            new Color(0.95f, 0.5f, 0.65f),
+            new Color(0.55f, 0.7f, 1f),
+        };
+        for (int i = 0; i < count; i++)
+            Butterfly.Spawn(new Vector3(Random.Range(-14f, 14f), 0f, Random.Range(-14f, 14f)),
+                colors[i % colors.Length]);
+    }
+
+    /// 靜態合批：把不會動的裝飾合成大批次，大幅減少 draw call
+    void BatchStatics()
+    {
+        foreach (Transform child in transform)
+            StaticBatchingUtility.Combine(child.gameObject);
+    }
+
+    // ---------- 農場建築（圍籬外，不影響 NavMesh） ----------
+
+    void BuildFarm()
+    {
+        Texture2D woodTex = Resources.Load<Texture2D>("Art/wood_planks_tile");
+        Texture2D strawTex = Resources.Load<Texture2D>("Art/straw_tile");
+        var wood = TexMat(woodTex, new Color(0.55f, 0.4f, 0.25f));
+        var redWood = TexMat(woodTex, new Color(0.75f, 0.25f, 0.2f));
+        var straw = TexMat(strawTex, new Color(0.9f, 0.75f, 0.3f));
+
+        var farm = new GameObject("Farm").transform;
+        farm.SetParent(transform);
+
+        // 穀倉（東北角圍籬外）
+        BuildBarn(farm, new Vector3(16f, 0f, 26f), redWood, wood);
+        // 雞舍（西邊圍籬外）
+        BuildCoop(farm, new Vector3(-26f, 0f, 4f), wood, straw);
+        // 乾草捆（場內裝飾，無碰撞）
+        BuildHayBale(farm, new Vector3(-13f, 0f, 13f), straw);
+        BuildHayBale(farm, new Vector3(-11.6f, 0f, 12.4f), straw);
+        BuildHayBale(farm, new Vector3(12f, 0f, -14f), straw);
+        // 飼料槽（石板路旁）
+        BuildTrough(farm, new Vector3(6f, 0f, 7.8f), wood);
+        // 向日葵一排（北邊圍籬內側）
+        for (int i = 0; i < 8; i++)
+            BuildSunflower(farm, new Vector3(-16f + i * 4.5f, 0f, 18.6f));
+        // 菜園畦（東南角，兩條土壟 + 菜苗）
+        BuildVeggiePatch(farm, new Vector3(12f, 0f, -8f));
+    }
+
+    Material TexMat(Texture2D tex, Color tint)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null) shader = Shader.Find("Standard");
+        var m = new Material(shader);
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", tex != null ? Color.Lerp(tint, Color.white, 0.55f) : tint);
+        if (m.HasProperty("_Color")) m.SetColor("_Color", tint);
+        if (tex != null)
+        {
+            if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+            m.mainTexture = tex;
+        }
+        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.1f);
+        return m;
+    }
+
+    GameObject Prop(Transform parent, PrimitiveType type, Vector3 pos, Vector3 scale, Material mat, Vector3? euler = null)
+    {
+        var p = GameObject.CreatePrimitive(type);
+        Object.Destroy(p.GetComponent<Collider>()); // 場外裝飾不需要碰撞
+        p.transform.SetParent(parent);
+        p.transform.position = pos;
+        p.transform.localScale = scale;
+        if (euler.HasValue) p.transform.rotation = Quaternion.Euler(euler.Value);
+        p.GetComponent<Renderer>().sharedMaterial = mat;
+        return p;
+    }
+
+    void BuildBarn(Transform parent, Vector3 pos, Material walls, Material roof)
+    {
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 2f, 0f), new Vector3(7f, 4f, 5f), walls);
+        // 斜屋頂：兩片斜板
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(-1.85f, 4.8f, 0f), new Vector3(4.4f, 0.25f, 5.4f), roof, new Vector3(0f, 0f, 35f));
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(1.85f, 4.8f, 0f), new Vector3(4.4f, 0.25f, 5.4f), roof, new Vector3(0f, 0f, -35f));
+        // 大門
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 1.2f, -2.55f), new Vector3(2.2f, 2.4f, 0.15f), roof);
+    }
+
+    void BuildCoop(Transform parent, Vector3 pos, Material wood, Material straw)
+    {
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 1.1f, 0f), new Vector3(3.5f, 2.2f, 3f), wood);
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 2.5f, 0f), new Vector3(4f, 0.2f, 3.5f), straw, new Vector3(0f, 0f, 8f));
+        // 四支腳
+        for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+                Prop(parent, PrimitiveType.Cube, pos + new Vector3(x * 1.5f, 0.3f, z * 1.2f), new Vector3(0.2f, 0.6f, 0.2f), wood);
+        // 小門洞
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 0.9f, 1.55f), new Vector3(0.8f, 1f, 0.1f), straw);
+    }
+
+    void BuildHayBale(Transform parent, Vector3 pos, Material straw)
+    {
+        Prop(parent, PrimitiveType.Cylinder, pos + new Vector3(0f, 0.55f, 0f),
+            new Vector3(1.1f, 0.6f, 1.1f), straw, new Vector3(0f, Random.Range(0f, 360f), 90f));
+    }
+
+    void BuildTrough(Transform parent, Vector3 pos, Material wood)
+    {
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 0.25f, 0f), new Vector3(2.2f, 0.5f, 0.7f), wood);
+        Prop(parent, PrimitiveType.Cube, pos + new Vector3(0f, 0.52f, 0f), new Vector3(1.9f, 0.1f, 0.5f), RuntimeArt.Mat(new Color(0.85f, 0.7f, 0.3f)));
+    }
+
+    void BuildSunflower(Transform parent, Vector3 pos)
+    {
+        var stem = RuntimeArt.Mat(new Color(0.3f, 0.5f, 0.2f));
+        float h = Random.Range(1.4f, 1.9f);
+        Prop(parent, PrimitiveType.Cylinder, pos + new Vector3(0f, h / 2f, 0f), new Vector3(0.08f, h / 2f, 0.08f), stem);
+        Prop(parent, PrimitiveType.Sphere, pos + new Vector3(0f, h + 0.1f, -0.06f), new Vector3(0.5f, 0.5f, 0.12f), RuntimeArt.Mat(new Color(1f, 0.8f, 0.1f)));
+        Prop(parent, PrimitiveType.Sphere, pos + new Vector3(0f, h + 0.1f, -0.13f), new Vector3(0.22f, 0.22f, 0.1f), RuntimeArt.Mat(new Color(0.4f, 0.25f, 0.1f)));
+    }
+
+    void BuildVeggiePatch(Transform parent, Vector3 pos)
+    {
+        var soil = RuntimeArt.Mat(new Color(0.35f, 0.23f, 0.12f));
+        var leafGreen = RuntimeArt.Mat(new Color(0.35f, 0.65f, 0.25f));
+        for (int row = 0; row < 2; row++)
+        {
+            Vector3 rowPos = pos + new Vector3(0f, 0.08f, row * 1.6f);
+            Prop(parent, PrimitiveType.Cube, rowPos, new Vector3(6f, 0.16f, 0.9f), soil);
+            for (int i = 0; i < 6; i++)
+                Prop(parent, PrimitiveType.Sphere,
+                    rowPos + new Vector3(-2.5f + i * 1f, 0.2f, 0f),
+                    new Vector3(0.35f, 0.28f, 0.35f), leafGreen);
+        }
     }
 
     void SkyAndLight()
     {
-        var skyShader = Shader.Find("Skybox/Procedural");
-        if (skyShader != null)
+        // 優先用 AI 生成的漸層天空，沒有才用程序天空
+        var skyTex = Resources.Load<Texture2D>("Art/sky_gradient");
+        var panoShader = Shader.Find("Skybox/Panoramic");
+        if (skyTex != null && panoShader != null)
         {
-            var sky = new Material(skyShader);
-            sky.SetColor("_SkyTint", new Color(0.52f, 0.72f, 0.92f));
-            sky.SetColor("_GroundColor", new Color(0.55f, 0.47f, 0.35f));
-            sky.SetFloat("_Exposure", 1.15f);
-            sky.SetFloat("_AtmosphereThickness", 0.9f);
+            var sky = new Material(panoShader);
+            sky.SetTexture("_MainTex", skyTex);
+            if (sky.HasProperty("_Exposure")) sky.SetFloat("_Exposure", 1.05f);
             RenderSettings.skybox = sky;
+        }
+        else
+        {
+            var skyShader = Shader.Find("Skybox/Procedural");
+            if (skyShader != null)
+            {
+                var sky = new Material(skyShader);
+                sky.SetColor("_SkyTint", new Color(0.52f, 0.72f, 0.92f));
+                sky.SetColor("_GroundColor", new Color(0.55f, 0.47f, 0.35f));
+                sky.SetFloat("_Exposure", 1.15f);
+                sky.SetFloat("_AtmosphereThickness", 0.9f);
+                RenderSettings.skybox = sky;
+            }
         }
 
         RenderSettings.fog = true;
@@ -90,8 +273,13 @@ public class EnvironmentDecorator : MonoBehaviour
         {
             var r = ground.GetComponent<Renderer>();
             var m = r.material; // 執行期實例，不動資產
-            var tex = ProceduralTex.GrassBlotch();
-            if (m.HasProperty("_BaseMap")) { m.SetTexture("_BaseMap", tex); m.SetTextureScale("_BaseMap", new Vector2(7f, 7f)); }
+
+            // 優先用 AI 手繪草地（鏡像平鋪隱藏接縫），沒有才用程序貼圖
+            Texture2D tex = Resources.Load<Texture2D>("Art/grass_tile");
+            float tiling = 6f;
+            if (tex == null) { tex = ProceduralTex.GrassBlotch(); tiling = 7f; }
+
+            if (m.HasProperty("_BaseMap")) { m.SetTexture("_BaseMap", tex); m.SetTextureScale("_BaseMap", new Vector2(tiling, tiling)); }
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", Color.white);
             m.mainTexture = tex;
         }
@@ -131,8 +319,8 @@ public class EnvironmentDecorator : MonoBehaviour
                 blade.transform.localPosition = new Vector3(Random.Range(-0.1f, 0.1f), h / 2f, Random.Range(-0.1f, 0.1f));
                 blade.transform.localRotation = Quaternion.Euler(Random.Range(-12f, 12f), Random.Range(0f, 360f), Random.Range(-12f, 12f));
                 blade.transform.localScale = new Vector3(0.05f, h, 0.02f);
-                float g = Random.Range(0.38f, 0.55f);
-                blade.GetComponent<Renderer>().sharedMaterial = RuntimeArt.Mat(new Color(g * 0.55f, g, g * 0.35f));
+                blade.GetComponent<Renderer>().sharedMaterial =
+                    RuntimeArt.Mat(GrassPalette[Random.Range(0, GrassPalette.Length)]);
             }
         }
     }
@@ -152,8 +340,8 @@ public class EnvironmentDecorator : MonoBehaviour
             rock.transform.position = new Vector3(pos.x, s * 0.28f, pos.z);
             rock.transform.localScale = new Vector3(s, s * 0.6f, s * Random.Range(0.8f, 1.2f));
             rock.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            float v = Random.Range(0.4f, 0.55f);
-            rock.GetComponent<Renderer>().sharedMaterial = RuntimeArt.Mat(new Color(v, v, v * 1.05f));
+            rock.GetComponent<Renderer>().sharedMaterial =
+                RuntimeArt.Mat(RockPalette[Random.Range(0, RockPalette.Length)]);
         }
     }
 
@@ -190,8 +378,8 @@ public class EnvironmentDecorator : MonoBehaviour
                 float ls = Random.Range(1.6f, 2.6f);
                 leaf.transform.localPosition = new Vector3(Random.Range(-0.8f, 0.8f), th + Random.Range(-0.3f, 0.8f), Random.Range(-0.8f, 0.8f));
                 leaf.transform.localScale = new Vector3(ls, ls * 0.8f, ls);
-                float g = Random.Range(0.32f, 0.5f);
-                leaf.GetComponent<Renderer>().sharedMaterial = RuntimeArt.Mat(new Color(g * 0.5f, g, g * 0.35f));
+                leaf.GetComponent<Renderer>().sharedMaterial =
+                    RuntimeArt.Mat(LeafPalette[Random.Range(0, LeafPalette.Length)]);
             }
         }
     }

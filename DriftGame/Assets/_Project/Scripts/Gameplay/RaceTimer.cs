@@ -13,6 +13,9 @@ public class RaceTimer : MonoBehaviour
     public float BestLap { get; private set; } = -1f;
     public int LapsDone { get; private set; }
 
+    /// 完成一圈。參數為該圈秒數。
+    public event System.Action<float> OnLapCompleted;
+
     int expected;
 
     void Awake()
@@ -47,6 +50,7 @@ public class RaceTimer : MonoBehaviour
             LapsDone++;
             CurrentLap = 0f;
             expected = 1 % checkpointCount;
+            OnLapCompleted?.Invoke(LastLap);
         }
         else
         {

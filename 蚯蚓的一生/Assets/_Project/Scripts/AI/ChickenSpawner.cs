@@ -62,6 +62,8 @@ public class ChickenSpawner : MonoBehaviour
 
     void Spawn(ChickenBody.Kind kind)
     {
+        if (FindObjectsOfType<ChickenAI>().Length >= 12) return; // 全域上限（含孵出來的小雞）
+
         for (int attempt = 0; attempt < 20; attempt++)
         {
             Vector3 pos = new Vector3(

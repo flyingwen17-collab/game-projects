@@ -48,3 +48,7 @@ desktop.ini
 # ---- 本專案 ----
 # _Refs 是 AI 生成的參考素材，體積大且可重新生成；如需版控請自行移除此行
 _Refs/
+
+# 批次驗證產物
+unity_batch.log
+SumoParty/Screenshots/

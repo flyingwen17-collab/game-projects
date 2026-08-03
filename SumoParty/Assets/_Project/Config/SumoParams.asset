@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b72b4b2b2f8fffb4d9b3621ad47a1310, type: 3}
+  m_Name: SumoParams
+  m_EditorClassIdentifier: 
+  moveSpeed: 3.2
+  dodgeImpulse: 4.5
+  dodgeCooldown: 0.8
+  pushForce: 5.5
+  pushRange: 2.1
+  pushAngle: 75
+  pushCooldown: 0.35
+  pushLunge: 1.2
+  staminaMax: 100
+  staminaCostPerPush: 20
+  staminaRegenPerSec: 24
+  tiredPushMultiplier: 0.35
+  braceDuration: 2.5
+  braceCooldown: 2
+  braceResist: 0.7
+  shrinkDelay: 30
+  shrinkPerSec: 0.06
+  minRadiusRatio: 0.4
+  npcReactionDelay: 0.45
+  npcPushChance: 0.7
+  npcBraceChance: 0.3

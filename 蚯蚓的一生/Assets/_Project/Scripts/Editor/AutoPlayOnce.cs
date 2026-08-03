@@ -4,25 +4,37 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// 專案根目錄有 autoplay_once.flag 時：自動開 M0 場景並進入 Play（一次性）
+/// 用 EditorApplication.update 輪詢，比 delayCall 可靠（啟動early階段 delayCall 可能被清掉）
 [InitializeOnLoad]
 public static class AutoPlayOnce
 {
     const string ScenePath = "Assets/_Project/Scenes/M0_Prototype.unity";
+    static readonly string FlagPath =
+        Path.Combine(Directory.GetParent(Application.dataPath).FullName, "autoplay_once.flag");
+    static double startTime;
 
     static AutoPlayOnce()
     {
-        string flag = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "autoplay_once.flag");
-        if (!File.Exists(flag)) return;
+        if (!File.Exists(FlagPath)) return;
+        startTime = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TryPlay;
+    }
 
-        EditorApplication.delayCall += () =>
-        {
-            try { File.Delete(flag); } catch { }
-            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+    static void TryPlay()
+    {
+        // 等編輯器完全就緒（沒在編譯/更新資產）再動作
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+        if (EditorApplication.timeSinceStartup - startTime < 1.0) return; // 稍等啟動塵埃落定
 
-            if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().path != ScenePath)
-                EditorSceneManager.OpenScene(ScenePath);
+        EditorApplication.update -= TryPlay;
 
-            EditorApplication.EnterPlaymode();
-        };
+        try { File.Delete(FlagPath); } catch { }
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().path != ScenePath)
+            EditorSceneManager.OpenScene(ScenePath);
+
+        Debug.Log("AutoPlayOnce：自動進入 Play 模式");
+        EditorApplication.EnterPlaymode();
     }
 }

@@ -23,6 +23,7 @@ public class GameManager : MonoBehaviour
     // 險過提示（HUD 淡出用）
     public float CloseCallFlash { get; private set; }
     public int CloseCalls { get; private set; }
+    public int ChickensEaten { get; private set; }
 
     void Awake()
     {
@@ -67,6 +68,26 @@ public class GameManager : MonoBehaviour
         FoodEaten++;
     }
 
+    /// 一般加分（吃蛋等）
+    public void AddBonus(int points)
+    {
+        if (State != GameState.Playing) return;
+        Score += points;
+    }
+
+    /// 無敵模式吃掉一隻雞：+500、爽快慢動作
+    public void ChickenEaten()
+    {
+        if (State != GameState.Playing) return;
+        Score += 500f;
+        ChickensEaten++;
+        CloseCallFlash = 1.2f;
+        var w = GameObject.FindGameObjectWithTag("Player");
+        if (w != null) ScorePopup.Show(w.transform.position, "+500 吃雞！", new Color(1f, 0.6f, 0.2f), 1.3f);
+        if (CameraFollow.Main != null) CameraFollow.Main.Shake(0.2f);
+        StartCoroutine(SlowMo(0.5f, 0.35f));
+    }
+
     /// 啄下來前一瞬間鑽土閃掉：+300、慢動作、震動
     public void CloseCall()
     {
@@ -74,8 +95,14 @@ public class GameManager : MonoBehaviour
         Score += 300f;
         CloseCalls++;
         CloseCallFlash = 1.6f;
+        var wp = GameObject.FindGameObjectWithTag("Player");
+        if (wp != null) ScorePopup.Show(wp.transform.position, "+300", new Color(1f, 0.9f, 0.3f), 1.2f);
         SynthSfx.Play("closecall", 0.7f);
         if (CameraFollow.Main != null) CameraFollow.Main.Shake(0.18f);
+        var worm = GameObject.FindGameObjectWithTag("Player");
+        if (worm != null)
+            ParticleFx.Burst(worm.transform.position + Vector3.up * 0.4f,
+                new Color(1f, 0.9f, 0.3f), 14, 2.8f, 0.35f, 0.1f, 0.6f, "glow_soft", true);
         StartCoroutine(SlowMo(0.45f, 0.5f));
     }
 
@@ -107,7 +134,9 @@ public class GameManager : MonoBehaviour
                 rb.AddTorque(Random.insideUnitSphere * 8f, ForceMode.Impulse);
             }
             ParticleFx.Burst(worm.transform.position + Vector3.up * 0.3f,
-                new Color(1f, 0.6f, 0.7f), 24, 3.5f, 0.15f, 1.2f);
+                Color.white, 18, 3.5f, 0.3f, 0.5f, 1.2f, "feathers_sheet", false, 4, 2);
+            ParticleFx.Burst(worm.transform.position + Vector3.up * 0.3f,
+                new Color(1f, 0.6f, 0.7f), 12, 3f, 0.35f, 0.2f, 0.7f, "glow_soft", true);
         }
     }
 

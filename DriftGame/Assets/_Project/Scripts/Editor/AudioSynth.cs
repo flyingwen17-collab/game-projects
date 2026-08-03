@@ -18,6 +18,7 @@ public static class AudioSynth
         WriteWav(AudioDir + "/skid_loop.wav", Skid());
         WriteWav(AudioDir + "/brake_squeal.wav", Brake());
         WriteWav(AudioDir + "/bgm_loop.wav", Bgm());
+        WriteWav(AudioDir + "/impact.wav", Impact());
         AssetDatabase.Refresh();
         Debug.Log("[AudioSynth] audio generated");
     }
@@ -91,13 +92,54 @@ public static class AudioSynth
         return s;
     }
 
+    /// 鋸齒波：諧波比正弦豐富，主旋律才切得出來
+    static float Saw(float freq, float t)
+    {
+        float phase = freq * t;
+        return 2f * (phase - Mathf.Floor(phase + 0.5f));
+    }
+
+    // ---------- 撞擊：金屬板材的低頻衝擊 + 高頻碎裂 ----------
+    static float[] Impact()
+    {
+        int n = (int)(Rate * 0.55f);
+        var s = new float[n];
+        var rnd = new System.Random(77);
+
+        // 三個共振峰模擬鈑金被打到的金屬味
+        float[] modes = { 190f, 640f, 1830f };
+        float[] decay = { 12f, 20f, 34f };
+        float[] gain = { 1.0f, 0.55f, 0.30f };
+
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            float v = 0f;
+
+            // 低頻「碰」：瞬間衝擊
+            v += 1.15f * Mathf.Exp(-t * 26f) * Mathf.Sin(2f * Mathf.PI * (95f * Mathf.Exp(-t * 30f) + 42f) * t);
+
+            // 金屬共振
+            for (int m = 0; m < modes.Length; m++)
+                v += gain[m] * Mathf.Exp(-t * decay[m]) * Mathf.Sin(2f * Mathf.PI * modes[m] * t);
+
+            // 碎裂噪音（前 60ms）
+            float crackle = Mathf.Exp(-t * 55f);
+            v += 0.7f * crackle * ((float)rnd.NextDouble() * 2f - 1f);
+
+            s[i] = (float)Math.Tanh(v * 0.85f);
+        }
+        Normalize(s, 0.92f);
+        return s;
+    }
+
     // ---------- 熱血 BGM：150BPM Em-C-G-D 動力搖滾循環 ----------
     static float[] Bgm()
     {
         float bpm = 150f;
         float beat = 60f / bpm;               // 0.4s
-        int bars = 8;
-        int n = (int)(Rate * beat * 4 * bars); // 12.8s
+        int bars = 32;                        // 加長到 51.2 秒，A/B 段交替，開久了才不會膩
+        int n = (int)(Rate * beat * 4 * bars);
         var s = new float[n];
         var rnd = new System.Random(42);
 
@@ -117,6 +159,10 @@ public static class AudioSynth
             int chord = (beatIdx / 8) % 4;          // 每 2 小節換和弦
             float root = roots[chord];
 
+            int bar = beatIdx / 4;
+            bool sectionB = (bar / 8) % 2 == 1;     // 每 8 小節切換 A/B 段
+            bool isFillBar = (bar % 8) == 7;        // 每 8 小節最後一小節加過門
+
             float v = 0f;
 
             // 八分音符推進 Bass
@@ -132,29 +178,37 @@ public static class AudioSynth
                       + Mathf.Sin(2f * Mathf.PI * oct * 2f * t) + Mathf.Sin(2f * Mathf.PI * root * 2.006f * t);
             v += 0.085f * pad;
 
-            // 主旋律
+            // 主旋律：B 段高八度並加上三連音感，做出段落對比
             int riffNote = riff[beatIdx % 8];
-            float leadF = pent[riffNote];
-            float leadEnv = Mathf.Exp(-inBeat * 5f) * Mathf.Clamp01(inBeat * 80f);
+            float leadF = pent[riffNote] * (sectionB ? 2f : 1f);
+            float leadEnv = Mathf.Exp(-inBeat * (sectionB ? 7f : 5f)) * Mathf.Clamp01(inBeat * 80f);
             float vib = 1f + 0.004f * Mathf.Sin(2f * Mathf.PI * 5.5f * t);
-            v += 0.14f * leadEnv * ((float)Math.Tanh(1.8 * Mathf.Sin(2f * Mathf.PI * leadF * vib * t)));
+            // 三個微失諧鋸齒疊成 supersaw，比單一正弦厚
+            float saw = 0f;
+            for (int d = -1; d <= 1; d++)
+                saw += Saw(leadF * vib * (1f + d * 0.0035f), t);
+            v += (sectionB ? 0.10f : 0.13f) * leadEnv * (float)Math.Tanh(saw * 0.9f);
 
-            // 大鼓：每拍
+            // 大鼓：每拍，過門小節改成八分
             float kickEnv = Mathf.Exp(-inBeat * 22f);
             float kickF = 130f * Mathf.Exp(-inBeat * 26f) + 45f;
             v += 0.5f * kickEnv * Mathf.Sin(2f * Mathf.PI * kickF * inBeat);
 
-            // 小鼓：2、4 拍
-            if (beatIdx % 4 == 1 || beatIdx % 4 == 3)
+            // 小鼓：2、4 拍；過門小節每八分都打
+            bool snareHit = (beatIdx % 4 == 1 || beatIdx % 4 == 3);
+            if (isFillBar && beatIdx % 4 >= 2) snareHit = true;
+            if (snareHit)
             {
                 float sn = (float)rnd.NextDouble() * 2f - 1f;
-                v += 0.28f * sn * Mathf.Exp(-inBeat * 24f);
+                float env = isFillBar ? Mathf.Exp(-inEighth * 26f) : Mathf.Exp(-inBeat * 24f);
+                v += 0.28f * sn * env;
             }
 
-            // Hi-hat：八分音符
-            float hatEnv = Mathf.Exp(-inEighth * 70f);
+            // Hi-hat：八分音符，每 4 拍一次開鈸
+            bool openHat = (beatIdx % 4 == 3) && offbeat;
+            float hatEnv = openHat ? Mathf.Exp(-inEighth * 9f) : Mathf.Exp(-inEighth * 70f);
             float hat = (float)rnd.NextDouble() * 2f - 1f;
-            v += 0.09f * hat * hatEnv;
+            v += (openHat ? 0.07f : 0.09f) * hat * hatEnv;
 
             s[i] = (float)Math.Tanh(v * 1.25f);
         }
