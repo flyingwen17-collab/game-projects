@@ -261,8 +261,10 @@ public static class P2SceneBuilder
         foreach (var r in roof.GetComponentsInChildren<MeshRenderer>())
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        // ---- 觀眾席（AI 圖 billboard，兩層弧形）----
-        MakeStands(matCrowd, 10.5f, -0.9f, 6.5f, 3.2f, 6, 0f);
+        // ---- 觀眾席 ----
+        // 內圈：真 3D 姿勢人物（Quaternius CC0）坐在階梯座台上，鏡頭附近經得起看；
+        // 外圈上層：AI 圖 billboard 當遠景人海。兩者疊出縱深。
+        MakeCrowd3D(matFloor);
         MakeStands(matCrowd, 12.5f, 2.3f, 7.5f, 3.6f, 6, 12f);
 
         // ---- 幟旗 ----
@@ -510,6 +512,76 @@ public static class P2SceneBuilder
             rope.transform.localPosition = pos + Vector3.up * (half + 0.2f);
             rope.transform.localScale = new Vector3(0.03f, half, 0.03f);
             rope.GetComponent<MeshRenderer>().sharedMaterial = ropeMat;
+        }
+    }
+
+    // ---------- 3D 觀眾：兩層階梯座台 + 坐姿人物，少數站著歡呼 ----------
+    static void MakeCrowd3D(Material platformMat)
+    {
+        var root = new GameObject("Crowd3D");
+        var rnd = new System.Random(7);
+        var benchMat = MakeLit("CrowdBench", new Color(0.22f, 0.16f, 0.12f), smooth: 0.15f);
+
+        string[] sitting = { "Female_Sitting", "Female_Sitting_Cheering", "Male_Sitting",
+                             "Female_Sitting_Cheering" };   // 歡呼姿勢加權出現
+        string[] standing = { "Woman_Standing_Waving", "Male_LookingUp", "Female_Standing" };
+
+        // (半徑, 座面高, 人數)：兩層階梯
+        var tiers = new[]
+        {
+            (radius: 9.5f,  y: -1.45f, count: 24),
+            (radius: 10.9f, y: -0.45f, count: 28),
+        };
+
+        foreach (var t in tiers)
+        {
+            // 座台環：分段箱子圍成環（中心留空 —— 整片圓盤會把土俵 2.5m 的落差蓋掉）
+            int segs = 36;
+            float segLen = t.radius * 2f * Mathf.PI / segs + 0.25f;
+            for (int k = 0; k < segs; k++)
+            {
+                float sa = k / (float)segs * Mathf.PI * 2f;
+                var seg = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                seg.name = "Tier_r" + t.radius + "_" + k;
+                Object.DestroyImmediate(seg.GetComponent<BoxCollider>());
+                seg.transform.SetParent(root.transform);
+                seg.transform.localPosition = new Vector3(Mathf.Sin(sa) * t.radius, t.y - 0.1f, Mathf.Cos(sa) * t.radius);
+                seg.transform.localRotation = Quaternion.AngleAxis(sa * Mathf.Rad2Deg + 90f, Vector3.up);
+                seg.transform.localScale = new Vector3(segLen, 0.2f, 2.0f);
+                seg.GetComponent<MeshRenderer>().sharedMaterial = platformMat;
+            }
+
+            for (int i = 0; i < t.count; i++)
+            {
+                float a = (i + (float)rnd.NextDouble() * 0.4f) / t.count * Mathf.PI * 2f;
+                var pos = new Vector3(Mathf.Sin(a) * t.radius, t.y, Mathf.Cos(a) * t.radius);
+
+                // 面向土俵，帶一點隨機偏轉才不像閱兵
+                Vector3 inward = -new Vector3(pos.x, 0f, pos.z);
+                var rot = Quaternion.LookRotation(inward)
+                        * Quaternion.Euler(0f, -14f + (float)rnd.NextDouble() * 28f, 0f);
+
+                bool stand = rnd.NextDouble() < 0.12;   // 少數激動到站起來
+                string model = stand ? standing[rnd.Next(standing.Length)]
+                                     : sitting[rnd.Next(sitting.Length)];
+                float h = stand ? 1.62f + (float)rnd.NextDouble() * 0.18f
+                                : 1.02f + (float)rnd.NextDouble() * 0.14f;
+
+                var person = CrowdAssets.Spawn(model, root.transform, pos, rot, h);
+                if (person == null) continue;
+
+                if (!stand)
+                {
+                    var bench = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    bench.name = "Bench";
+                    Object.DestroyImmediate(bench.GetComponent<BoxCollider>());
+                    bench.transform.SetParent(root.transform);
+                    bench.transform.position = pos + new Vector3(0f, 0.14f, 0f);
+                    bench.transform.rotation = rot;
+                    bench.transform.localScale = new Vector3(0.85f, 0.28f, 0.55f);
+                    bench.GetComponent<MeshRenderer>().sharedMaterial = benchMat;
+                }
+            }
         }
     }
 
