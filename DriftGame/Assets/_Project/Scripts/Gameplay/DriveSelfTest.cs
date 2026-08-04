@@ -47,6 +47,8 @@ public class DriveSelfTest : MonoBehaviour
     bool reachedReverseGear;
     bool nightLightsOn;
     string nightPreset = "";
+    NPCDriver[] npcDrivers = new NPCDriver[0];
+    Vector3[] npcStartPos = new Vector3[0];
     readonly StringBuilder log = new StringBuilder();
     readonly System.Collections.Generic.List<string> timeline = new System.Collections.Generic.List<string>();
 
@@ -72,6 +74,13 @@ public class DriveSelfTest : MonoBehaviour
         scoring = car.GetComponent<DriftScoring>();
         spy = car.gameObject.AddComponent<ContactSpy>();
         startPos = car.transform.position;
+
+        // 記錄 NPC 起始位置，最後確認它們真的有在跑
+        npcDrivers = FindObjectsOfType<NPCDriver>();
+        npcStartPos = new Vector3[npcDrivers.Length];
+        for (int i = 0; i < npcDrivers.Length; i++)
+            npcStartPos[i] = npcDrivers[i].transform.position;
+        log.AppendLine("NPC 數量：" + npcDrivers.Length);
 
         log.AppendLine("車輛：" + car.spec.displayName);
         log.AppendLine("質量：" + car.spec.massKg + " kg   胎徑：" + car.spec.wheelRadiusM.ToString("0.000") + " m");
@@ -374,6 +383,23 @@ public class DriveSelfTest : MonoBehaviour
         fail += Check(reverseDistance > 3f, $"倒檔能實際往後開（後退 {reverseDistance:0.0} m，需 > 3 m）");
         fail += Check(nightPreset == "夜晚", $"時段能切換到夜晚（實際 {nightPreset}）");
         fail += Check(nightLightsOn, "天黑時車頭燈自動開啟");
+
+        // NPC：確認它們真的在跑，而不是原地不動或卡住
+        float npcMoved = 0f;
+        int npcMovers = 0;
+        for (int i = 0; i < npcDrivers.Length; i++)
+        {
+            if (npcDrivers[i] == null) continue;
+            float d = Vector3.Distance(npcDrivers[i].transform.position, npcStartPos[i]);
+            npcMoved += d;
+            if (d > 30f) npcMovers++;
+        }
+        float npcAvg = npcDrivers.Length > 0 ? npcMoved / npcDrivers.Length : 0f;
+        log.AppendLine($"NPC 平均移動 {npcAvg:0.0} m，其中 {npcMovers}/{npcDrivers.Length} 台跑超過 30 m");
+
+        fail += Check(npcDrivers.Length >= 4, $"場上有足夠的 NPC（{npcDrivers.Length} 台）");
+        fail += Check(npcMovers >= npcDrivers.Length / 2,
+                      $"至少一半 NPC 有正常行駛（{npcMovers}/{npcDrivers.Length}）");
 
         Finish(fail == 0 ? "全部通過" : fail + " 項未通過");
     }

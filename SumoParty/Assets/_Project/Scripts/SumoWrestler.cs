@@ -10,6 +10,7 @@ public class SumoWrestler : MonoBehaviour
     public SumoParams P;
     public string DisplayName = "力士";
     public SumoWrestler Opponent;
+    public WrestlerVisuals Visuals;
 
     public bool Eliminated { get; private set; }
     public float Stamina { get; private set; }
@@ -25,6 +26,7 @@ public class SumoWrestler : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         rb.constraints = RigidbodyConstraints.FreezeRotation;
+        rb.centerOfMass = new Vector3(0f, 0.55f, 0f);   // 低重心：推撞時沉、穩、有份量
         spawnPos = transform.position;
         Stamina = P != null ? P.staminaMax : 100f;
     }
@@ -38,6 +40,7 @@ public class SumoWrestler : MonoBehaviour
         float factor = Mathf.Lerp(P.tiredPushMultiplier, 1f, Stamina / P.staminaMax);
         Stamina = Mathf.Max(0f, Stamina - P.staminaCostPerPush);
         rb.AddForce(transform.forward * P.pushLunge, ForceMode.VelocityChange);
+        Visuals?.Stretch(0.7f);   // 突進瞬間拉長，出手有勁
 
         if (Opponent != null && !Opponent.Eliminated)
         {
@@ -76,18 +79,30 @@ public class SumoWrestler : MonoBehaviour
         if (Eliminated) return;
         if (IsBracing) impulse *= (1f - P.braceResist);
         knockTimer = 0.5f;
+        // 微量上抬：被撞飛時稍微離地彈跳，衝擊看得見
+        impulse += Vector3.up * impulse.magnitude * 0.14f;
         rb.AddForce(impulse, ForceMode.VelocityChange);
+        Visuals?.Squash(Mathf.Clamp01(impulse.magnitude / 8f));
     }
 
     public void MarkEliminated()
     {
         Eliminated = true;
         moveInput = Vector2.zero;
+        // 出局交還完整物理：解鎖旋轉、順著飛行方向翻滾摔出去
+        rb.constraints = RigidbodyConstraints.None;
+        Vector3 dir = rb.velocity.sqrMagnitude > 0.1f ? rb.velocity.normalized : transform.forward;
+        Vector3 axis = Vector3.Cross(Vector3.up, dir);
+        rb.AddTorque(axis * 6f + Random.insideUnitSphere * 1.5f, ForceMode.VelocityChange);
     }
 
     public void ResetState(Vector3 pos)
     {
         transform.position = pos;
+        // 翻滾後回正：只保留朝向，直立鎖回旋轉
+        Vector3 fwd = transform.forward; fwd.y = 0f;
+        transform.rotation = Quaternion.LookRotation(fwd.sqrMagnitude > 0.01f ? fwd : Vector3.forward);
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         Eliminated = false;

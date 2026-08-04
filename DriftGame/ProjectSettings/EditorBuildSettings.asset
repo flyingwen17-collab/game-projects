@@ -9,6 +9,12 @@ EditorBuildSettings:
     path: Assets/_Project/Scenes/RallyTrack.unity
     guid: 0ec3e777e14956d4bbac14d21272502f
   - enabled: 1
+    path: Assets/_Project/Scenes/Expressway.unity
+    guid: 51bc4e83d520bcc44bc47a80562fecf4
+  - enabled: 1
+    path: Assets/_Project/Scenes/CityStreet.unity
+    guid: 3c93e5d6e88afa04699019e9ffe3130e
+  - enabled: 1
     path: Assets/_Project/Scenes/PracticeGround.unity
     guid: d5fe0eed33d41664c85d75dc64b5ac42
   m_configObjects: {}

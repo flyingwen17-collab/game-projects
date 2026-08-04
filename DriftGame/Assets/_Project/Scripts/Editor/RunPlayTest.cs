@@ -7,13 +7,25 @@ using UnityEngine;
 /// 測試跑完後由 DriveSelfTest 自己呼叫 EditorApplication.Exit 結束。
 public static class RunPlayTest
 {
-    const string ScenePath = "Assets/_Project/Scenes/RallyTrack.unity";
+    const string DefaultScene = "RallyTrack";
 
     [MenuItem("Tools/Drift Game/Run Drive Self Test")]
     public static void Run()
     {
-        EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-        Debug.Log("[RunPlayTest] 進入 Play 模式執行自我測試…");
+        // 用環境變數 DRIFT_TEST_SCENE 指定要測哪個賽道，未指定就測拉力賽道
+        string sceneName = System.Environment.GetEnvironmentVariable("DRIFT_TEST_SCENE");
+        if (string.IsNullOrEmpty(sceneName)) sceneName = DefaultScene;
+
+        string path = "Assets/_Project/Scenes/" + sceneName + ".unity";
+        if (!System.IO.File.Exists(path))
+        {
+            Debug.LogError("[RunPlayTest] 找不到場景：" + path);
+            EditorApplication.Exit(3);
+            return;
+        }
+
+        EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+        Debug.Log("[RunPlayTest] 進入 Play 模式執行自我測試（場景：" + sceneName + "）…");
         EditorApplication.EnterPlaymode();
     }
 }

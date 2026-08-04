@@ -33,7 +33,8 @@ public static class RallySceneBuilder
         BuildEnvironment();
         var samples = BuildTrack();
         var cars = BuildCars(samples);
-        BuildManagers(cars, samples);
+        var npcs = BuildNPCs(samples, racerCount: 4, trafficCount: 3);
+        BuildManagers(cars, samples, npcs);
         BuildPostProcessing();
 
         string path = ScenesDir + "/RallyTrack.unity";
@@ -102,41 +103,59 @@ public static class RallySceneBuilder
         }
     }
 
+    /// Kenney Nature Kit 的樹隨機散布；模型缺席時退回舊的圓柱+球。
     static void ScatterTrees(List<Vector3> trackSamples)
     {
-        var trunkMat = ColorMat("Trunk", new Color(0.35f, 0.24f, 0.14f), 0.1f);
-        var leafMat = ColorMat("Leaf", new Color(0.13f, 0.38f, 0.15f), 0.1f);
         var root = new GameObject("Trees");
         var rnd = new System.Random(23);
+        string[] models =
+        {
+            "tree_default", "tree_detailed", "tree_oak", "tree_fat",
+            "tree_pineDefaultA", "tree_pineDefaultB", "tree_pineRoundA", "tree_default_fall",
+        };
+
         int placed = 0, attempts = 0;
-        while (placed < 45 && attempts < 400)
+        while (placed < 70 && attempts < 600)
         {
             attempts++;
             var p = new Vector3(-140f + (float)rnd.NextDouble() * 430f, 0f, -260f + (float)rnd.NextDouble() * 520f);
             bool nearTrack = false;
             foreach (var s in trackSamples)
-                if ((s - p).sqrMagnitude < 18f * 18f) { nearTrack = true; break; }
+                if ((s - p).sqrMagnitude < 16f * 16f) { nearTrack = true; break; }
             if (nearTrack) continue;
 
-            var tree = new GameObject("Tree" + placed);
-            tree.transform.SetParent(root.transform);
-            tree.transform.position = p;
-            float scale = 0.8f + (float)rnd.NextDouble() * 0.7f;
-
-            var trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            trunk.transform.SetParent(tree.transform, false);
-            trunk.transform.localPosition = new Vector3(0f, 1.5f * scale, 0f);
-            trunk.transform.localScale = new Vector3(0.35f * scale, 1.5f * scale, 0.35f * scale);
-            trunk.GetComponent<MeshRenderer>().sharedMaterial = trunkMat;
-
-            var leaves = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            Object.DestroyImmediate(leaves.GetComponent<Collider>());
-            leaves.transform.SetParent(tree.transform, false);
-            leaves.transform.localPosition = new Vector3(0f, 3.6f * scale, 0f);
-            leaves.transform.localScale = Vector3.one * 3.2f * scale;
-            leaves.GetComponent<MeshRenderer>().sharedMaterial = leafMat;
+            string model = models[rnd.Next(models.Length)];
+            float height = model.Contains("pine") ? 8f + (float)rnd.NextDouble() * 5f
+                                                  : 5.5f + (float)rnd.NextDouble() * 3.5f;
+            var rot = Quaternion.Euler(0f, (float)rnd.NextDouble() * 360f, 0f);
+            var tree = KenneyLib.PlaceToHeight("nature", model, root.transform, p, rot, height);
+            if (tree == null) { FallbackTree(root.transform, p, rnd); }
+            else KenneyLib.MakeStatic(tree);
             placed++;
         }
+    }
+
+    static void FallbackTree(Transform root, Vector3 p, System.Random rnd)
+    {
+        var trunkMat = ColorMat("Trunk", new Color(0.35f, 0.24f, 0.14f), 0.1f);
+        var leafMat = ColorMat("Leaf", new Color(0.13f, 0.38f, 0.15f), 0.1f);
+        var tree = new GameObject("Tree");
+        tree.transform.SetParent(root);
+        tree.transform.position = p;
+        float scale = 0.8f + (float)rnd.NextDouble() * 0.7f;
+
+        var trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        trunk.transform.SetParent(tree.transform, false);
+        trunk.transform.localPosition = new Vector3(0f, 1.5f * scale, 0f);
+        trunk.transform.localScale = new Vector3(0.35f * scale, 1.5f * scale, 0.35f * scale);
+        trunk.GetComponent<MeshRenderer>().sharedMaterial = trunkMat;
+
+        var leaves = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        Object.DestroyImmediate(leaves.GetComponent<Collider>());
+        leaves.transform.SetParent(tree.transform, false);
+        leaves.transform.localPosition = new Vector3(0f, 3.6f * scale, 0f);
+        leaves.transform.localScale = Vector3.one * 3.2f * scale;
+        leaves.GetComponent<MeshRenderer>().sharedMaterial = leafMat;
     }
 
     // ---------------- 賽道 ----------------
@@ -165,9 +184,14 @@ public static class RallySceneBuilder
                 samples.Add(CatmullRom(p0, p1, p2, p3, (float)j / perSeg));
         }
 
+        // 路徑資料給 NPC 循跡用
+        var pathGo = new GameObject("TrackPath");
+        pathGo.AddComponent<TrackPath>().SetPoints(samples, RoadWidth);
+
         BuildRoadMesh(samples);
         BuildWalls(samples);
         BuildStartAndCheckpoints(samples);
+        BuildStartProps(samples);
         ScatterTrees(samples);
         return samples;
     }
@@ -302,6 +326,7 @@ public static class RallySceneBuilder
     static void BuildWalls(List<Vector3> s)
     {
         var wallMat = TexMat("Barrier", GuardrailTexture(), 1f, 0.55f, new Vector2(2.5f, 1f));
+        bool useKit = KenneyLib.Load("racing", "rail") != null;
         var root = new GameObject("Walls");
         int n = s.Count;
         int step = 2;
@@ -314,16 +339,100 @@ public static class RallySceneBuilder
             float len = Vector3.Distance(a, b);
             foreach (float side in new[] { -1f, 1f })
             {
+                Vector3 mid = (a + b) * 0.5f + right * side * (RoadWidth * 0.5f + 1.2f);
+
+                // 物理牆：永遠是隱形方塊（碰撞行為與舊版完全一致）
                 var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 wall.name = "Wall";
                 wall.transform.SetParent(root.transform);
-                wall.transform.position = (a + b) * 0.5f + right * side * (RoadWidth * 0.5f + 1.2f) + Vector3.up * 0.55f;
+                wall.transform.position = mid + Vector3.up * 0.55f;
                 wall.transform.rotation = Quaternion.LookRotation(dir);
                 wall.transform.localScale = new Vector3(0.35f, 1.1f, len + 0.5f);
-                wall.GetComponent<MeshRenderer>().sharedMaterial = wallMat;
                 wall.isStatic = true;
+                if (useKit)
+                {
+                    Object.DestroyImmediate(wall.GetComponent<MeshRenderer>());
+                    Object.DestroyImmediate(wall.GetComponent<MeshFilter>());
+                    // 視覺牆：Kenney 金屬護欄，沿段長非等比拉伸（低模護欄拉一點看不出來）
+                    var rail = KenneyLib.PlaceToSize("racing", "rail", root.transform,
+                        mid, Quaternion.LookRotation(dir), new Vector3(0.5f, 1.0f, len + 0.3f));
+                    if (rail != null) KenneyLib.MakeStatic(rail);
+                }
+                else
+                {
+                    wall.GetComponent<MeshRenderer>().sharedMaterial = wallMat;
+                }
             }
         }
+    }
+
+    /// 起點區的賽事氛圍道具：拱門、看台、維修站、旗幟、廣告牌。
+    static void BuildStartProps(List<Vector3> s)
+    {
+        if (KenneyLib.Load("racing", "grandStandCovered") == null) return;
+        int n = s.Count;
+        var root = new GameObject("StartProps");
+        int idx = startIndex;
+        Vector3 pos = s[idx];
+        Vector3 tan = Tangent(s, idx);
+        Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+
+        // 起點拱門：橫跨路面（含護欄外緣）
+        var arch = KenneyLib.PlaceToSize("racing", "overheadLights", root.transform,
+            pos, Quaternion.LookRotation(tan), new Vector3(RoadWidth + 5f, 7f, 2.5f));
+        if (arch != null) KenneyLib.MakeStatic(arch);
+
+        // 兩座有頂看台在起點外側，面向賽道。
+        // 賽道會繞回來，固定偏移可能壓到另一段路 —— 放之前先驗淨空。
+        for (int k = 0; k < 2; k++)
+        {
+            int gi = (idx - 10 + k * 14 + n) % n;
+            Vector3 gpos = s[gi] + Vector3.Cross(Vector3.up, Tangent(s, gi)).normalized * 22f;
+            if (!FarFromTrack(gpos, s, 15f)) continue;
+            var stand = KenneyLib.PlaceToHeight("racing", "grandStandCovered", root.transform,
+                gpos, Quaternion.LookRotation(-Vector3.Cross(Vector3.up, Tangent(s, gi)).normalized), 7.5f);
+            if (stand != null) KenneyLib.MakeStatic(stand);
+        }
+
+        // 維修站在看台對側
+        Vector3 pitPos = pos - right * 26f;
+        if (FarFromTrack(pitPos, s, 17f))
+        {
+            var pit = KenneyLib.PlaceToHeight("racing", "pitsGarage", root.transform,
+                pitPos, Quaternion.LookRotation(right), 5.5f);
+            if (pit != null) KenneyLib.MakeStatic(pit);
+        }
+
+        // 起點兩側的方格旗
+        foreach (float side in new[] { -1f, 1f })
+        {
+            var flag = KenneyLib.PlaceToHeight("racing", "flagCheckers", root.transform,
+                pos + right * side * (RoadWidth * 0.5f + 2.2f), Quaternion.LookRotation(tan), 4.5f);
+            if (flag != null) KenneyLib.MakeStatic(flag);
+        }
+
+        // 廣告牌沿賽道外側每隔一段一塊，交錯左右
+        string[] boards = { "billboard", "billboardLow", "bannerTowerRed", "bannerTowerGreen" };
+        for (int k = 0; k < 8; k++)
+        {
+            int bi = (idx + 25 + k * (n / 8)) % n;
+            float side = k % 2 == 0 ? 1f : -1f;
+            Vector3 br = Vector3.Cross(Vector3.up, Tangent(s, bi)).normalized;
+            Vector3 bpos = s[bi] + br * side * 14f;
+            if (!FarFromTrack(bpos, s, 10f)) continue;
+            var board = KenneyLib.PlaceToHeight("racing", boards[k % boards.Length], root.transform,
+                bpos, Quaternion.LookRotation(-br * side), 5f);
+            if (board != null) KenneyLib.MakeStatic(board);
+        }
+    }
+
+    /// 該點與整條賽道所有取樣點都保持最小距離才回傳 true。
+    static bool FarFromTrack(Vector3 p, List<Vector3> s, float minDist)
+    {
+        float sq = minDist * minDist;
+        foreach (var q in s)
+            if ((q - p).sqrMagnitude < sq) return false;
+        return true;
     }
 
     static int startIndex = -1;
@@ -388,7 +497,60 @@ public static class RallySceneBuilder
         return cars;
     }
 
-    static void BuildManagers(CarController[] cars, List<Vector3> s)
+    /// 生出 NPC：前段是會甩尾的對手，後段是慢速的一般車流。
+    /// 它們沿賽道均勻分布，各自有不同的走線偏移，避免一開始就疊在一起。
+    static GameObject[] BuildNPCs(List<Vector3> s, int racerCount, int trafficCount)
+    {
+        int n = s.Count;
+        var styles = new[] { CarFactory.Style.WRX, CarFactory.Style.FIT, CarFactory.Style.AE86 };
+        var result = new List<GameObject>();
+        var root = new GameObject("NPCs");
+        var hornClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/horn.wav");
+
+        int total = racerCount + trafficCount;
+        if (total <= 0) return result.ToArray();
+
+        // 一般車流用民用車款，看起來才像「路上的車」而不是對手
+        string[] civilian = { "taxi", "van", "suv", "sedan", "police", "delivery" };
+
+        for (int i = 0; i < total; i++)
+        {
+            bool isTraffic = i >= racerCount;
+
+            // 沿賽道均勻散開，起跑區留給玩家
+            int idx = ((startIndex + 40 + i * (n / Mathf.Max(1, total))) % n + n) % n;
+            Vector3 tan = Tangent(s, idx);
+            Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+            float lane = isTraffic ? (i % 2 == 0 ? 2.6f : -2.6f) : ((i % 3) - 1) * 2.2f;
+            Vector3 pos = s[idx] + right * lane + Vector3.up * 0.6f;
+
+            var go = CarFactory.Build(styles[i % styles.Length], pos, Quaternion.LookRotation(tan),
+                                      isTraffic ? civilian[i % civilian.Length] : null);
+            go.name = (isTraffic ? "NPC_Traffic_" : "NPC_Racer_") + i;
+            go.transform.SetParent(root.transform);
+
+            var ai = go.AddComponent<NPCDriver>();
+            ai.laneOffset = lane;
+            if (isTraffic)
+            {
+                ai.style = NPCDriver.Style.Traffic;
+            }
+            else
+            {
+                // 一半是純競速、一半是甩尾狂，實力有高有低才有變化
+                ai.style = (i % 2 == 0) ? NPCDriver.Style.Racer : NPCDriver.Style.Drifter;
+                ai.skill = Mathf.Lerp(0.55f, 0.92f, (float)i / Mathf.Max(1, racerCount - 1));
+            }
+
+            var react = go.AddComponent<NPCReaction>();
+            react.hornClip = hornClip;
+
+            result.Add(go);
+        }
+        return result.ToArray();
+    }
+
+    static void BuildManagers(CarController[] cars, List<Vector3> s, GameObject[] npcs)
     {
         // 攝影機
         var camGo = new GameObject("Main Camera");
@@ -420,6 +582,7 @@ public static class RallySceneBuilder
         var gm = gmGo.AddComponent<GameManager>();
         gm.cars = cars;
         gm.cameraFollow = follow;
+        gm.npcs = npcs;
     }
 
     // ---------------- 後製 ----------------

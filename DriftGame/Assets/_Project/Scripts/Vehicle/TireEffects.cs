@@ -131,12 +131,21 @@ public class TireEffects : MonoBehaviour
             bool grounded = active && car.Grounded[i];
             float usage = grounded ? car.GripUsage[i] : 0f;
 
-            trails[i].emitting = grounded && usage > markThreshold;
+            // 草地/泥土：塵土是棕色的、輕滑就揚起；柏油才是白色燒胎煙
+            bool offroad = grounded && car.SurfaceMu[i] < 0.8f;
+            float mThresh = offroad ? 0.55f : markThreshold;
+            float sThresh = offroad ? 0.58f : smokeThreshold;
+
+            trails[i].emitting = grounded && !offroad && usage > mThresh;   // 泥地不留黑胎痕
+
+            var main = smokes[i].main;
+            main.startColor = offroad ? new Color(0.58f, 0.48f, 0.36f, 0.32f)
+                                      : new Color(0.9f, 0.89f, 0.87f, 0.30f);
 
             var emission = smokes[i].emission;
-            if (grounded && usage > smokeThreshold)
+            if (grounded && usage > sThresh)
             {
-                float t = Mathf.InverseLerp(smokeThreshold, 1f, usage);
+                float t = Mathf.InverseLerp(sThresh, 1f, usage);
                 // 車速也影響煙量：靜止空轉的煙比高速甩尾少
                 float speedScale = Mathf.Clamp01(car.SpeedKmh / 40f);
                 emission.rateOverTime = maxSmokeRate * t * Mathf.Max(0.25f, speedScale);

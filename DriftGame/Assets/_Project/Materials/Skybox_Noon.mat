@@ -25,12 +25,12 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 08cddbe76a7cbfd468ebee459d6eeaea, type: 3}
+        m_Texture: {fileID: 2800000, guid: 03365ab4e2da3064394b3fedcb2d58e3, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Exposure: 1.05
+    - _Exposure: 0.72
     - _ImageType: 0
     - _Layout: 0
     - _Mapping: 1

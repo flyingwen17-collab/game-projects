@@ -58,6 +58,8 @@ public class CarController : MonoBehaviour
     public bool[] Grounded = new bool[4];
     /// 該輪的胎力用掉多少抓地力預算（0..1），>0.95 就是在打滑
     public float[] GripUsage = new float[4];
+    /// 該輪腳下路面的抓地係數（1=乾柏油、0.55=草地泥土），特效也讀這個決定揚塵顏色
+    public float[] SurfaceMu = { 1f, 1f, 1f, 1f };
 
     /// 診斷用：實際算出並施加到剛體的胎面力（車輛座標，x=縱向 y=側向）
     [System.NonSerialized] public Vector2[] LastTireForce = new Vector2[4];
@@ -229,12 +231,14 @@ public class CarController : MonoBehaviour
             if (!Grounded[i])
             {
                 TireLoad[i] = 0f; SlipRatio[i] = 0f; SlipAngleDeg[i] = 0f; GripUsage[i] = 0f;
+                SurfaceMu[i] = 1f;
                 suspensionDrop[i] = travel;                       // 完全伸長
                 WheelWorldPos[i] = origin - up * travel;
                 WheelWorldRot[i] = anchor.rotation;
                 continue;
             }
 
+            SurfaceMu[i] = SurfaceGripOf(hit);
             float drop = Mathf.Clamp(hit.distance - radius, 0f, travel);
             float compression = travel - drop;
             suspensionDrop[i] = drop;
@@ -265,6 +269,11 @@ public class CarController : MonoBehaviour
             Vector3 planarV = Vector3.ProjectOnPlane(pv, normal[i]);
             float vLong = Vector3.Dot(planarV, wheelFwd[i]);
             float vLat = Vector3.Dot(planarV, wheelRight[i]);
+
+            // 滾動阻力：柏油輕微；草地泥土會實際把車拖慢（衝出賽道的懲罰來自物理，不是扣分）
+            float rollRes = SurfaceMu[i] < 0.8f ? 0.055f : 0.012f;
+            if (planarV.sqrMagnitude > 0.2f)
+                rb.AddForceAtPosition(-planarV.normalized * load * rollRes, contact[i]);
 
             // 滑移角：胎面朝向與實際行進方向的夾角
             SlipAngleDeg[i] = Mathf.Atan2(vLat, Mathf.Max(Mathf.Abs(vLong), 0.6f)) * Mathf.Rad2Deg;
@@ -507,6 +516,8 @@ public class CarController : MonoBehaviour
         for (int k = 0; k < idx.Length; k++)
         {
             int i = idx[k];
+            // 路面材質係數：柏油 1.0、路緣石略滑、草地泥土只剩一半多的抓地
+            float mu = baseMu * SurfaceMu[i];
             float longForce = 0f;
 
             for (int s = 0; s < SubSteps; s++)
@@ -523,11 +534,11 @@ public class CarController : MonoBehaviour
                 float fx = 0f, peak = 0f;
                 if (Grounded[i] && TireLoad[i] > 1f)
                 {
-                    peak = TireModel.PeakForce(TireLoad[i], baseMu, spec.loadSensitivity);
+                    peak = TireModel.PeakForce(TireLoad[i], mu, spec.loadSensitivity);
                     SlipRatio[i] = Mathf.Clamp(
                         (WheelOmega[i] * spec.wheelRadiusM - vLong) / vRef, -4f, 4f);
                     fx = TireModel.Compute(SlipAngleDeg[i] * Mathf.Deg2Rad, SlipRatio[i],
-                                           TireLoad[i], baseMu, spec.loadSensitivity).x;
+                                           TireLoad[i], mu, spec.loadSensitivity).x;
                 }
 
                 // 輪胎角速度：Iw·dω/dt = 驅動 + 差速耦合 − 地面反作用
@@ -559,8 +570,8 @@ public class CarController : MonoBehaviour
             if (!Grounded[i] || TireLoad[i] <= 1f) { GripUsage[i] = 0f; LastTireForce[i] = Vector2.zero; continue; }
 
             var force = TireModel.Compute(SlipAngleDeg[i] * Mathf.Deg2Rad, SlipRatio[i],
-                                          TireLoad[i], baseMu, spec.loadSensitivity);
-            float peakForce = TireModel.PeakForce(TireLoad[i], baseMu, spec.loadSensitivity);
+                                          TireLoad[i], mu, spec.loadSensitivity);
+            float peakForce = TireModel.PeakForce(TireLoad[i], mu, spec.loadSensitivity);
             GripUsage[i] = peakForce > 1f ? Mathf.Clamp01(force.magnitude / peakForce) : 0f;
             LastTireForce[i] = force;
 
@@ -568,6 +579,19 @@ public class CarController : MonoBehaviour
             rb.AddForceAtPosition(worldForce, contact[i]);
             LastTotalForce += worldForce;
         }
+    }
+
+    /// 由射線命中的物件判斷腳下路面。場景生成器對物件的命名就是路面類型的約定：
+    /// Road/StartLine=柏油、Kerb=路緣石、Sidewalk=人行道、Grass=草地、Ground=市區鋪面。
+    static float SurfaceGripOf(RaycastHit hit)
+    {
+        string n = hit.collider.gameObject.name;
+        if (n.StartsWith("Road") || n.StartsWith("StartLine")) return 1f;
+        if (n.StartsWith("Kerb")) return 0.92f;
+        if (n.StartsWith("Sidewalk")) return 0.95f;
+        if (n.StartsWith("Grass")) return 0.55f;
+        if (n.StartsWith("Ground")) return 0.82f;
+        return 0.8f;
     }
 
     // ---------------- 空力、防傾桿、輔助 ----------------

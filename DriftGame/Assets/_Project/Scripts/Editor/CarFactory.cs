@@ -1,17 +1,22 @@
 using UnityEditor;
 using UnityEngine;
 
-/// 用基本幾何拼出三台真實風格拉力車：WRX（藍/金圈/大尾翼）、FIT（銀色小掀背）、86（熊貓配色雙門）。
+/// 組裝可開的車：物理（WheelCollider + 真實規格）不變，
+/// 視覺改用 Kenney Car Kit 的 FBX 模型；模型缺席時退回舊的方塊拼裝。
+/// 三台玩家車：WRX（race 塗裝賽車）、FIT（hatchback-sports 熱掀背）、AE86（sedan-sports 雙門）。
+/// 交通 NPC 可用 visualOverride 指定民用車款（taxi / van / suv…）。
 public static class CarFactory
 {
     public enum Style { WRX, FIT, AE86 }
 
     const string MaterialsDir = "Assets/_Project/Materials";
 
-    public static GameObject Build(Style style, Vector3 pos, Quaternion rot)
+    public static GameObject Build(Style style, Vector3 pos, Quaternion rot, string visualOverride = null)
     {
         var car = new GameObject("Car_" + style);
-        car.transform.SetPositionAndRotation(pos, rot);
+        // 組裝期間保持無旋轉 —— 量測模型邊界用的是世界軸 AABB，
+        // 斜著量會把長度灌水、縮放算錯。最後才套上目標朝向。
+        car.transform.position = pos;
 
         var rb = car.AddComponent<Rigidbody>();
         rb.drag = 0.05f;
@@ -62,11 +67,33 @@ public static class CarFactory
         wheelRadius = spec.wheelRadiusM;
         rb.mass = spec.massKg;
 
-        // ---- 車身 ----
+        // ---- Kenney 車體模型（視覺主體）----
+        string bodyModel = visualOverride ?? (style == Style.WRX ? "race"
+                          : style == Style.FIT ? "hatchback-sports"
+                          : "sedan-sports");
+        var kitBody = KenneyLib.Place("cars", bodyModel, car.transform,
+                                      car.transform.position, car.transform.rotation);
+        bool kit = kitBody != null;
+        if (kit)
+        {
+            var b = KenneyLib.MeasureBounds(kitBody);
+            // 模型長軸可能在 X 或 Z：統一轉到車頭朝 +Z
+            if (b.size.x > b.size.z)
+                kitBody.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+            float rawLen = Mathf.Max(b.size.x, b.size.z);
+            kitBody.transform.localScale = Vector3.one * ((bodySize.z + 0.4f) / rawLen);
+
+            // 底盤略低於輪心 → 輪拱包住輪胎上緣，不會像方塊時期那樣「浮」在輪子上
+            b = KenneyLib.MeasureBounds(kitBody);
+            kitBody.transform.position += Vector3.up *
+                (car.transform.position.y - wheelRadius * 0.55f - b.min.y);
+            KenneyLib.CenterXZ(kitBody, car.transform.position);
+        }
+
+        // ---- 碰撞體（方塊）：有模型時只留碰撞、不畫 ----
         float bodyY = 0.32f + bodySize.y * 0.5f;
         var body = Part(car, "Body", new Vector3(0f, bodyY, 0f), bodySize, bodyMat, true);
 
-        // 車艙（含車窗色）
         Vector3 cabinSize; Vector3 cabinPos;
         switch (style)
         {
@@ -83,42 +110,58 @@ public static class CarFactory
                 cabinPos = new Vector3(0f, bodyY + bodySize.y * 0.5f + cabinSize.y * 0.5f - 0.03f, -0.4f);
                 break;
         }
-        Part(car, "Cabin", cabinPos, cabinSize, glassMat, true);
+        var cabin = Part(car, "Cabin", cabinPos, cabinSize, glassMat, true);
+
+        if (kit)
+        {
+            StripVisual(body);
+            StripVisual(cabin);
+        }
 
         float halfL = bodySize.z * 0.5f;
         float topY = bodyY + bodySize.y * 0.5f;
 
-        // ---- 風格細節 ----
-        if (style == Style.WRX)
+        // ---- 方塊時期的風格細節：只有沒模型時才拼 ----
+        if (!kit)
         {
-            // 引擎蓋進氣孔
-            Part(car, "HoodScoop", new Vector3(0f, topY + 0.07f, halfL - 0.85f), new Vector3(0.55f, 0.14f, 0.5f), accentMat, false);
-            // 拉力大尾翼
-            Part(car, "WingPostL", new Vector3(-0.55f, topY + 0.18f, -halfL + 0.28f), new Vector3(0.08f, 0.36f, 0.12f), accentMat, false);
-            Part(car, "WingPostR", new Vector3(0.55f, topY + 0.18f, -halfL + 0.28f), new Vector3(0.08f, 0.36f, 0.12f), accentMat, false);
-            Part(car, "WingPlank", new Vector3(0f, topY + 0.38f, -halfL + 0.28f), new Vector3(1.65f, 0.06f, 0.38f), accentMat, false);
-        }
-        else if (style == Style.AE86)
-        {
-            // 熊貓黑引擎蓋 + 小鴨尾
-            Part(car, "BlackHood", new Vector3(0f, topY + 0.012f, halfL - 0.75f), new Vector3(1.55f, 0.03f, 1.4f), accentMat, false);
-            Part(car, "DuckTail", new Vector3(0f, topY + 0.06f, -halfL + 0.12f), new Vector3(1.5f, 0.08f, 0.22f), accentMat, false);
+            if (style == Style.WRX)
+            {
+                Part(car, "HoodScoop", new Vector3(0f, topY + 0.07f, halfL - 0.85f), new Vector3(0.55f, 0.14f, 0.5f), accentMat, false);
+                Part(car, "WingPostL", new Vector3(-0.55f, topY + 0.18f, -halfL + 0.28f), new Vector3(0.08f, 0.36f, 0.12f), accentMat, false);
+                Part(car, "WingPostR", new Vector3(0.55f, topY + 0.18f, -halfL + 0.28f), new Vector3(0.08f, 0.36f, 0.12f), accentMat, false);
+                Part(car, "WingPlank", new Vector3(0f, topY + 0.38f, -halfL + 0.28f), new Vector3(1.65f, 0.06f, 0.38f), accentMat, false);
+            }
+            else if (style == Style.AE86)
+            {
+                Part(car, "BlackHood", new Vector3(0f, topY + 0.012f, halfL - 0.75f), new Vector3(1.55f, 0.03f, 1.4f), accentMat, false);
+                Part(car, "DuckTail", new Vector3(0f, topY + 0.06f, -halfL + 0.12f), new Vector3(1.5f, 0.08f, 0.22f), accentMat, false);
+            }
+            Part(car, "BumperF", new Vector3(0f, bodyY - bodySize.y * 0.35f, halfL + 0.06f), new Vector3(bodySize.x * 0.98f, 0.22f, 0.14f), darkMat, false);
+            Part(car, "BumperR", new Vector3(0f, bodyY - bodySize.y * 0.35f, -halfL - 0.06f), new Vector3(bodySize.x * 0.98f, 0.22f, 0.14f), darkMat, false);
         }
 
-        // 保險桿與車燈
-        Part(car, "BumperF", new Vector3(0f, bodyY - bodySize.y * 0.35f, halfL + 0.06f), new Vector3(bodySize.x * 0.98f, 0.22f, 0.14f), darkMat, false);
-        Part(car, "BumperR", new Vector3(0f, bodyY - bodySize.y * 0.35f, -halfL - 0.06f), new Vector3(bodySize.x * 0.98f, 0.22f, 0.14f), darkMat, false);
+        // 車燈方塊一律保留：CarLights 靠它們的 emission 做開燈效果（夜晚吃 Bloom）。
+        // 有模型時縮小、貼在車頭尾表面，看起來就是燈殼。
         var headMat = Mat("Headlight", new Color(1f, 0.97f, 0.85f), 0.9f);
         var tailMat = Mat("Taillight", new Color(0.8f, 0.06f, 0.05f), 0.85f);
-        var headL = Part(car, "HeadL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
-        var headR = Part(car, "HeadR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, halfL + 0.015f), new Vector3(0.32f, 0.12f, 0.06f), headMat, false);
-        var tailL = Part(car, "TailL", new Vector3(-bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
-        var tailR = Part(car, "TailR", new Vector3(bodySize.x * 0.33f, bodyY + 0.08f, -halfL - 0.015f), new Vector3(0.32f, 0.1f, 0.06f), tailMat, false);
+        float lightY = kit ? bodyY - 0.06f : bodyY + 0.08f;
+        Vector3 lightSize = kit ? new Vector3(0.24f, 0.09f, 0.05f) : new Vector3(0.32f, 0.12f, 0.06f);
+        float lightX = bodySize.x * (kit ? 0.28f : 0.33f);
+        var headL = Part(car, "HeadL", new Vector3(-lightX, lightY, halfL + 0.015f), lightSize, headMat, false);
+        var headR = Part(car, "HeadR", new Vector3(lightX, lightY, halfL + 0.015f), lightSize, headMat, false);
+        var tailL = Part(car, "TailL", new Vector3(-lightX, lightY, -halfL - 0.015f), lightSize, tailMat, false);
+        var tailR = Part(car, "TailR", new Vector3(lightX, lightY, -halfL - 0.015f), lightSize, tailMat, false);
 
         // ---- 輪子 ----
         float axleF = halfL - 0.72f;
         float axleR = -halfL + 0.72f;
         float trackHalf = bodySize.x * 0.5f - 0.05f;
+        if (kit)
+        {
+            // Kenney 車身比真實規格寬，輪距跟著模型實寬走，輪子才不會整顆縮進車殼裡
+            var kb = KenneyLib.MeasureBounds(kitBody);
+            trackHalf = Mathf.Max(trackHalf, kb.size.x * 0.5f - 0.12f);
+        }
         Vector3[] wheelPos =
         {
             new Vector3(-trackHalf, 0f, axleF),
@@ -127,6 +170,8 @@ public static class CarFactory
             new Vector3( trackHalf, 0f, axleR),
         };
         string[] names = { "FL", "FR", "RL", "RR" };
+        // 玩家車配賽車圈、民用車配原廠圈
+        string wheelModel = visualOverride != null ? "wheel-default" : "wheel-racing";
 
         var colliderRoot = new GameObject("WheelColliders");
         colliderRoot.transform.SetParent(car.transform, false);
@@ -155,21 +200,44 @@ public static class CarFactory
             pivot.transform.SetParent(meshRoot.transform, false);
             pivot.transform.localPosition = wheelPos[i];
 
-            var tire = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            tire.name = "Tire";
-            Object.DestroyImmediate(tire.GetComponent<Collider>());
-            tire.transform.SetParent(pivot.transform, false);
-            tire.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            tire.transform.localScale = new Vector3(wheelRadius * 2f, 0.115f, wheelRadius * 2f);
-            tire.GetComponent<MeshRenderer>().sharedMaterial = darkMat;
+            GameObject kitWheel = kit
+                ? KenneyLib.Place("cars", wheelModel, pivot.transform,
+                                  pivot.transform.position, pivot.transform.rotation)
+                : null;
+            if (kitWheel != null)
+            {
+                // 右側輪鏡像（輪圈造型有內外之分）
+                if (wheelPos[i].x > 0f)
+                    kitWheel.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                // 視覺放大 1.3 倍：Kenney 車體是卡通比例，照真實胎徑裝會像玩具滑板輪。
+                // 物理半徑不動，輪心往上抬讓「放大後的胎底」仍貼地。
+                const float visualScale = 1.3f;
+                var wb = KenneyLib.MeasureBounds(kitWheel);
+                float dia = Mathf.Max(wb.size.y, wb.size.z);
+                kitWheel.transform.localScale = Vector3.one * (wheelRadius * 2f * visualScale / dia);
+                // 邊界中心對齊輪心（模型樞紐不一定在中心）
+                wb = KenneyLib.MeasureBounds(kitWheel);
+                kitWheel.transform.position += pivot.transform.position - wb.center
+                                               + Vector3.up * (wheelRadius * (visualScale - 1f));
+            }
+            else
+            {
+                var tire = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                tire.name = "Tire";
+                Object.DestroyImmediate(tire.GetComponent<Collider>());
+                tire.transform.SetParent(pivot.transform, false);
+                tire.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                tire.transform.localScale = new Vector3(wheelRadius * 2f, 0.115f, wheelRadius * 2f);
+                tire.GetComponent<MeshRenderer>().sharedMaterial = darkMat;
 
-            var rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            rim.name = "Rim";
-            Object.DestroyImmediate(rim.GetComponent<Collider>());
-            rim.transform.SetParent(pivot.transform, false);
-            rim.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            rim.transform.localScale = new Vector3(wheelRadius * 1.25f, 0.118f, wheelRadius * 1.25f);
-            rim.GetComponent<MeshRenderer>().sharedMaterial = wheelMat;
+                var rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rim.name = "Rim";
+                Object.DestroyImmediate(rim.GetComponent<Collider>());
+                rim.transform.SetParent(pivot.transform, false);
+                rim.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                rim.transform.localScale = new Vector3(wheelRadius * 1.25f, 0.118f, wheelRadius * 1.25f);
+                rim.GetComponent<MeshRenderer>().sharedMaterial = wheelMat;
+            }
 
             meshes[i] = pivot.transform;
         }
@@ -215,7 +283,19 @@ public static class CarFactory
         audio.backfireClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire.wav");
         audio.exhaustFlame = BuildExhaustFlame(car, -halfL - 0.05f);
 
+        // 組裝完才套目標朝向（見開頭註解）
+        car.transform.rotation = rot;
+
         return car;
+    }
+
+    /// 拿掉渲染、留下碰撞體（Kenney 模型接手視覺後，方塊只當物理外殼）。
+    static void StripVisual(GameObject go)
+    {
+        var mr = go.GetComponent<MeshRenderer>();
+        if (mr != null) Object.DestroyImmediate(mr);
+        var mf = go.GetComponent<MeshFilter>();
+        if (mf != null) Object.DestroyImmediate(mf);
     }
 
     /// 排氣管回火火焰：只在回火時 Emit，平時不噴。

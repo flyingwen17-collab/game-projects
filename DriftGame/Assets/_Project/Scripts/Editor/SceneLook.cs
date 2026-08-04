@@ -126,9 +126,11 @@ public static class SceneLook
     {
         // 三個時段各一張全景天空盒（2:1 equirectangular）。
         // 全景照的雲層與色彩層次是程序化天空做不出來的。
-        var skyNoon = BuildPanoSky("Skybox_Noon", "SKY_Noon", 1.05f, 140f);
-        var skyDusk = BuildPanoSky("Skybox_GoldenHour", "SKY_Dusk", 1.15f, 205f);
-        var skyNight = BuildPanoSky("Skybox_Night", "SKY_Night", 1.35f, 60f);
+        // 曝光值是給真 HDR 全景調的：HDR 的亮度是實際動態範圍，
+        // 用 LDR 時代的 1.0+ 曝光會整片過曝成白色。
+        var skyNoon = BuildPanoSky("Skybox_Noon", "SKY_Noon", 0.72f, 140f);
+        var skyDusk = BuildPanoSky("Skybox_GoldenHour", "SKY_Dusk", 0.68f, 205f);
+        var skyNight = BuildPanoSky("Skybox_Night", "SKY_Night", 1.4f, 60f);
 
         RenderSettings.skybox = skyDusk != null ? skyDusk : skyNoon;
 
@@ -172,11 +174,15 @@ public static class SceneLook
         RenderSettings.defaultReflectionMode = DefaultReflectionMode.Skybox;
     }
 
-    /// 建立一張 Panoramic 天空盒材質。找不到貼圖就回傳程序化天空當備援。
+    /// 建立一張 Panoramic 天空盒材質。
+    /// 優先用 Poly Haven 的真 HDR 全景（.hdr，無接縫、亮度是真實動態範圍），
+    /// 其次 AI 生成的 .png 全景，都沒有才退回程序化天空。
     static Material BuildPanoSky(string matName, string texName, float exposure, float rotation)
     {
         string path = MaterialsDir + "/" + matName + ".mat";
-        var tex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/" + texName + ".png");
+        Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/" + texName + ".hdr");
+        if (tex == null)
+            tex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/" + texName + ".png");
 
         var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
         Shader shader = tex != null ? Shader.Find("Skybox/Panoramic") : Shader.Find("Skybox/Procedural");

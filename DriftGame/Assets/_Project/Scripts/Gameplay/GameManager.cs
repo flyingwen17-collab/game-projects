@@ -12,6 +12,11 @@ public class GameManager : MonoBehaviour
     public string[] carDescs = { "AWD・四驅穩定高速", "FWD・靈活小鋼砲", "RWD・甩尾之魂" };
     public CameraFollow cameraFollow;
 
+    [Header("NPC")]
+    public GameObject[] npcs = new GameObject[0];
+    [Tooltip("開場是否啟用 NPC")]
+    public bool npcsEnabled = true;
+
     [Header("結算")]
     public float resultAutoHideSeconds = 7f;
 
@@ -35,6 +40,7 @@ public class GameManager : MonoBehaviour
     {
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         foreach (var c in cars) if (c != null) c.enabled = false;
+        SetNpcsEnabled(npcsEnabled);
         BuildUI();
         ShowSelect(true);
 
@@ -111,7 +117,8 @@ public class GameManager : MonoBehaviour
         // 操作提示（左下）
         hintText = MakeText("Hint", new Vector2(0f, 0f), new Vector2(30f, 30f), 22, TextAnchor.LowerLeft);
         hintText.text = "WASD 駕駛（停住後長按 S 進倒檔）   Space 手煞車   Q 升檔 / E 降檔   T 自排手排\n"
-                      + "L 車燈（關→近燈→遠燈）   N 時段（正午→黃昏→夜晚）   R 重置   1/2/3 換車   Esc 選單";
+                      + "L 車燈   N 時段（正午→黃昏→夜晚）   M NPC 上場/離場   R 重置   1/2/3 換車   Esc 選單\n"
+                      + "F1 拉力賽道   F2 日本高速公路   F3 台北街道";
         hintText.color = new Color(1f, 1f, 1f, 0.65f);
 
         BuildSelectPanel();
@@ -228,6 +235,23 @@ public class GameManager : MonoBehaviour
         if (selectPanel != null) selectPanel.SetActive(show);
     }
 
+    /// 切換賽道。場景已登記在 Build Settings（TrackScenes.RegisterScenes）。
+    void LoadTrack(string sceneName)
+    {
+        var active = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if (active.name == sceneName) return;
+        UnityEngine.SceneManagement.SceneManager.LoadScene(sceneName);
+    }
+
+    /// NPC 上場/離場。離場時整台停用（含物理與 AI），不只是關 AI。
+    public void SetNpcsEnabled(bool on)
+    {
+        npcsEnabled = on;
+        if (npcs == null) return;
+        foreach (var go in npcs)
+            if (go != null) go.SetActive(on);
+    }
+
     // ---------------- 流程 ----------------
 
     public void StartRace(int carIndex)
@@ -337,6 +361,18 @@ public class GameManager : MonoBehaviour
                 TimeOfDay.Instance.Cycle();
                 Flash("時段：" + TimeOfDay.Instance.Label, new Color(0.7f, 0.85f, 1f));
             }
+
+            // M 開關 NPC 陪跑
+            if (kb.mKey.wasPressedThisFrame)
+            {
+                SetNpcsEnabled(!npcsEnabled);
+                Flash(npcsEnabled ? "NPC 已上場" : "NPC 已離場", new Color(0.75f, 1f, 0.8f));
+            }
+
+            // F1/F2/F3 切換賽道
+            if (kb.f1Key.wasPressedThisFrame) LoadTrack("RallyTrack");
+            if (kb.f2Key.wasPressedThisFrame) LoadTrack("Expressway");
+            if (kb.f3Key.wasPressedThisFrame) LoadTrack("CityStreet");
         }
 
         if (resultPanel.activeSelf)

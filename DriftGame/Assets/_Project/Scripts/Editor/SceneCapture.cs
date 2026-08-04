@@ -10,6 +10,42 @@ public static class SceneCapture
 {
     const string ScenePath = "Assets/_Project/Scenes/RallyTrack.unity";
 
+    /// 三個賽道各拍一張全景，用來快速檢查新賽道有沒有建壞
+    [MenuItem("Tools/Drift Game/Capture All Tracks")]
+    public static void CaptureAllTracks()
+    {
+        string outDir = ResolveOutDir();
+        Directory.CreateDirectory(outDir);
+
+        string[] scenes = { "RallyTrack", "Expressway", "CityStreet" };
+        foreach (var sceneName in scenes)
+        {
+            string path = "Assets/_Project/Scenes/" + sceneName + ".unity";
+            if (!File.Exists(path)) { Debug.LogWarning("[SceneCapture] 找不到場景 " + sceneName); continue; }
+            EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+
+            var car = GameObject.Find("Car_AE86") ?? GameObject.Find("Car_WRX");
+            if (car == null) { Debug.LogWarning("[SceneCapture] " + sceneName + " 沒有車輛"); continue; }
+
+            Shot(outDir, "track_" + sceneName + "_chase",
+                 car.transform.position + car.transform.forward * -9f + Vector3.up * 3.4f,
+                 car.transform.position + car.transform.forward * 18f + Vector3.up * 1f);
+
+            Shot(outDir, "track_" + sceneName + "_vista",
+                 car.transform.position + Vector3.up * 52f - car.transform.forward * 70f + car.transform.right * 30f,
+                 car.transform.position + car.transform.forward * 80f);
+
+            Debug.Log("[SceneCapture] " + sceneName + " 截圖完成");
+        }
+    }
+
+    static string ResolveOutDir()
+    {
+        string outDir = System.Environment.GetEnvironmentVariable("DRIFT_SHOT_DIR");
+        if (string.IsNullOrEmpty(outDir)) outDir = Path.Combine(Application.dataPath, "../../_Refs/07_實機截圖");
+        return outDir;
+    }
+
     [MenuItem("Tools/Drift Game/Capture Screenshots")]
     public static void CaptureAll()
     {
