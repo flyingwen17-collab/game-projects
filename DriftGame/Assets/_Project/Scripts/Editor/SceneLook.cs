@@ -112,7 +112,7 @@ public static class SceneLook
 
     static void AttachGlobalVolume(VolumeProfile profile)
     {
-        var existing = Object.FindObjectOfType<Volume>();
+        var existing = Object.FindAnyObjectByType<Volume>();
         var go = existing != null ? existing.gameObject : new GameObject("Global Volume");
         var volume = existing != null ? existing : go.AddComponent<Volume>();
         volume.isGlobal = true;
@@ -135,7 +135,7 @@ public static class SceneLook
         RenderSettings.skybox = skyDusk != null ? skyDusk : skyNoon;
 
         // 時段控制器：一次切換天空、太陽、環境光、霧
-        var tod = Object.FindObjectOfType<TimeOfDay>();
+        var tod = Object.FindAnyObjectByType<TimeOfDay>();
         if (tod == null)
         {
             var go = new GameObject("TimeOfDay");
@@ -216,7 +216,7 @@ public static class SceneLook
 
     static Light FindSun()
     {
-        foreach (var l in Object.FindObjectsOfType<Light>())
+        foreach (var l in Object.FindObjectsByType<Light>())
             if (l.type == LightType.Directional) return l;
         var go = new GameObject("Sun");
         return go.AddComponent<Light>();
@@ -227,7 +227,7 @@ public static class SceneLook
     static void ApplyCameraSettings()
     {
         var cam = Camera.main;
-        if (cam == null) cam = Object.FindObjectOfType<Camera>();
+        if (cam == null) cam = Object.FindAnyObjectByType<Camera>();
         if (cam == null) return;
 
         cam.allowHDR = true;

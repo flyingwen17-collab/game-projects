@@ -56,7 +56,7 @@ public static class ProjectSetup
         var pipeline = UniversalRenderPipelineAsset.Create(rendererData);
         AssetDatabase.CreateAsset(pipeline, SettingsDir + "/URP_Pipeline.asset");
 
-        GraphicsSettings.renderPipelineAsset = pipeline;
+        GraphicsSettings.defaultRenderPipeline = pipeline;
         QualitySettings.renderPipeline = pipeline;
         Debug.Log("[ProjectSetup] URP assigned");
         return pipeline;
@@ -142,8 +142,8 @@ public static class ProjectSetup
         var car = new GameObject("Car");
         var rb = car.AddComponent<Rigidbody>();
         rb.mass = 1200f;
-        rb.drag = 0.05f;
-        rb.angularDrag = 0.6f;
+        rb.linearDamping = 0.05f;
+        rb.angularDamping = 0.6f;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
         // 車身

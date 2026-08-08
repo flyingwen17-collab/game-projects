@@ -33,7 +33,7 @@ public class TimeOfDay : MonoBehaviour
         Instance = this;
         if (sun == null)
         {
-            foreach (var l in FindObjectsOfType<Light>())
+            foreach (var l in FindObjectsByType<Light>())
                 if (l.type == LightType.Directional) { sun = l; break; }
         }
     }

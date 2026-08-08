@@ -19,8 +19,8 @@ public static class CarFactory
         car.transform.position = pos;
 
         var rb = car.AddComponent<Rigidbody>();
-        rb.drag = 0.05f;
-        rb.angularDrag = 0.6f;
+        rb.linearDamping = 0.05f;
+        rb.angularDamping = 0.6f;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
         // 規格先決定：車身幾何、WheelCollider、Rigidbody 全部以它為準，

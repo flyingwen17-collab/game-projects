@@ -197,7 +197,7 @@ public class CarController : MonoBehaviour
     void FixedUpdate()
     {
         float dt = Time.fixedDeltaTime;
-        Vector3 vel = rb.velocity;
+        Vector3 vel = rb.linearVelocity;
         SpeedKmh = vel.magnitude * 3.6f;
         LastTotalForce = Vector3.zero;
         ShiftedThisFrame = false;
@@ -399,7 +399,7 @@ public class CarController : MonoBehaviour
     /// 停下來後持續按煞車鍵就進倒檔；倒檔中按前進鍵且幾乎停住就回一檔。
     void UpdateReverseEngagement(float dt)
     {
-        float forwardSpeed = Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+        float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward) * 3.6f;
 
         if (Gear >= 1)
         {
@@ -442,7 +442,7 @@ public class CarController : MonoBehaviour
         if (Gear <= 0) return;
         if (Gear == 1)
         {
-            float forwardSpeed = Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+            float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward) * 3.6f;
             if (forwardSpeed > 3f) return;
             Gear = 0;
         }
@@ -477,7 +477,7 @@ public class CarController : MonoBehaviour
         // 倒檔限速：實車倒檔齒比高、拉不快
         if (Gear == 0)
         {
-            float reverseSpeed = -Vector3.Dot(rb.velocity, transform.forward) * 3.6f;
+            float reverseSpeed = -Vector3.Dot(rb.linearVelocity, transform.forward) * 3.6f;
             if (reverseSpeed > spec.reverseTopSpeedKmh) throttle = 0f;
         }
 
@@ -501,7 +501,7 @@ public class CarController : MonoBehaviour
 
         float baseMu = isFront ? spec.tireGripFront : spec.tireGripRear;
         float brakeInput = BrakeInput;
-        IsBraking = brakeInput > 0.05f && Mathf.Abs(Vector3.Dot(rb.velocity, transform.forward)) > 1f;
+        IsBraking = brakeInput > 0.05f && Mathf.Abs(Vector3.Dot(rb.linearVelocity, transform.forward)) > 1f;
 
         float brakeT = brakeInput * spec.brakeTorqueNm *
                        (isFront ? spec.brakeBiasFront : 1f - spec.brakeBiasFront) * 2f;
@@ -650,7 +650,7 @@ public class CarController : MonoBehaviour
         // 未選中的車是 kinematic，對 kinematic 剛體寫 velocity 會噴警告
         if (rb != null && !rb.isKinematic)
         {
-            rb.velocity = Vector3.zero;
+            rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
         for (int i = 0; i < 4; i++) { WheelOmega[i] = 0f; SlipRatio[i] = 0f; SlipAngleDeg[i] = 0f; GripUsage[i] = 0f; }
@@ -667,7 +667,7 @@ public class CarController : MonoBehaviour
         // 未選中的車必須直接凍結，否則會在斜面上無摩擦滑走。
         if (rb != null)
         {
-            rb.velocity = Vector3.zero;
+            rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
             rb.isKinematic = true;
         }

@@ -83,7 +83,7 @@ public static class TrackScenes
 
         SceneLook.ApplyAll();
         // 高速公路預設夜晚 —— 濕路面反射霓虹是這條賽道的賣點
-        var tod = Object.FindObjectOfType<TimeOfDay>();
+        var tod = Object.FindAnyObjectByType<TimeOfDay>();
         if (tod != null) tod.preset = TimeOfDay.Preset.Night;
 
         EditorSceneManager.SaveScene(scene, TrackGen.ScenesDir + "/Expressway.unity");
@@ -153,7 +153,7 @@ public static class TrackScenes
         TrackGen.BuildManagers(cars, npcs, s, startIndex);
 
         SceneLook.ApplyAll();
-        var tod = Object.FindObjectOfType<TimeOfDay>();
+        var tod = Object.FindAnyObjectByType<TimeOfDay>();
         if (tod != null) tod.preset = TimeOfDay.Preset.Dusk;
 
         EditorSceneManager.SaveScene(scene, TrackGen.ScenesDir + "/CityStreet.unity");

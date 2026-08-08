@@ -60,7 +60,7 @@ public class CameraFollow : MonoBehaviour
     {
         if (target == null) return;
 
-        Vector3 flatVel = targetRb != null ? targetRb.velocity : Vector3.zero;
+        Vector3 flatVel = targetRb != null ? targetRb.linearVelocity : Vector3.zero;
         flatVel.y = 0f;
         float speed = flatVel.magnitude;
 

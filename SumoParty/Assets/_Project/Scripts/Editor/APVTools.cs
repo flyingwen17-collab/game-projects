@@ -70,7 +70,7 @@ public static class APVTools
         var scene = SceneManager.GetActiveScene();
         if (scene.path != ScenePath) { EditorSceneManager.OpenScene(ScenePath); scene = SceneManager.GetActiveScene(); }
 
-        var existing = UnityEngine.Object.FindObjectsByType<ProbeVolume>(FindObjectsSortMode.None);
+        var existing = UnityEngine.Object.FindObjectsByType<ProbeVolume>();
         if (existing.Length == 0)
         {
             var go = new GameObject("Adaptive Probe Volume");

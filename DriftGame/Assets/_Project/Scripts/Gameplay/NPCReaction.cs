@@ -137,7 +137,7 @@ public class NPCReaction : MonoBehaviour
     {
         if (player != null) return;
         // 玩家 = 目前被 GameManager 啟用、且沒有 NPCDriver 的那台車
-        foreach (var c in FindObjectsOfType<CarController>())
+        foreach (var c in FindObjectsByType<CarController>())
         {
             if (c == null || !c.enabled) continue;
             if (c.GetComponent<NPCDriver>() != null) continue;

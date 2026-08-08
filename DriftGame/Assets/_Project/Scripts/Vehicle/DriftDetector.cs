@@ -29,7 +29,7 @@ public class DriftDetector : MonoBehaviour
 
     void FixedUpdate()
     {
-        Vector3 flatVel = rb.velocity;
+        Vector3 flatVel = rb.linearVelocity;
         flatVel.y = 0f;
         SpeedKmh = flatVel.magnitude * 3.6f;
 

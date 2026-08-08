@@ -54,7 +54,7 @@ public class DriveSelfTest : MonoBehaviour
 
     void Start()
     {
-        var gm = FindObjectOfType<GameManager>();
+        var gm = FindAnyObjectByType<GameManager>();
         if (gm != null && gm.cars != null && gm.cars.Length > 0)
         {
             // 選 AE86（後驅、最好甩）；找不到就用第一台
@@ -64,7 +64,7 @@ public class DriveSelfTest : MonoBehaviour
             gm.StartRace(idx);
             car = gm.cars[idx];
         }
-        if (car == null) car = FindObjectOfType<CarController>();
+        if (car == null) car = FindAnyObjectByType<CarController>();
 
         if (car == null) { Finish("找不到任何 CarController"); return; }
 
@@ -76,7 +76,7 @@ public class DriveSelfTest : MonoBehaviour
         startPos = car.transform.position;
 
         // 記錄 NPC 起始位置，最後確認它們真的有在跑
-        npcDrivers = FindObjectsOfType<NPCDriver>();
+        npcDrivers = FindObjectsByType<NPCDriver>();
         npcStartPos = new Vector3[npcDrivers.Length];
         for (int i = 0; i < npcDrivers.Length; i++)
             npcStartPos[i] = npcDrivers[i].transform.position;
@@ -138,7 +138,7 @@ public class DriveSelfTest : MonoBehaviour
             if (!controlStarted)
             {
                 controlStarted = true;
-                controlV0 = rbc.velocity.magnitude;
+                controlV0 = rbc.linearVelocity.magnitude;
                 log.AppendLine($"[對照實驗] 剛體狀態 kinematic={rbc.isKinematic} useGravity={rbc.useGravity} "
                              + $"睡眠={rbc.IsSleeping()} 約束={rbc.constraints} mass={rbc.mass:0} "
                              + $"timeScale={Time.timeScale:0.00} fixedDelta={Time.fixedDeltaTime:0.000}");
@@ -155,8 +155,8 @@ public class DriveSelfTest : MonoBehaviour
         {
             controlLogged = true;
             var rbc = car.GetComponent<Rigidbody>();
-            float dv = rbc.velocity.magnitude - controlV0;
-            log.AppendLine($"[對照實驗] 直接施加 3000N 一秒：速度 {controlV0:0.00} → {rbc.velocity.magnitude:0.00} m/s（理論應 +3.09）"
+            float dv = rbc.linearVelocity.magnitude - controlV0;
+            log.AppendLine($"[對照實驗] 直接施加 3000N 一秒：速度 {controlV0:0.00} → {rbc.linearVelocity.magnitude:0.00} m/s（理論應 +3.09）"
                          + (dv > 1.5f ? "  → 剛體吃力正常，問題在胎力傳遞" : "  → 剛體不吃力，被外部壓制"));
         }
 
@@ -167,20 +167,20 @@ public class DriveSelfTest : MonoBehaviour
             airLifted = true;
             car.transform.position += Vector3.up * 6f;
             var rba = car.GetComponent<Rigidbody>();
-            rba.velocity = Vector3.zero;
+            rba.linearVelocity = Vector3.zero;
             airV0 = 0f;
         }
         if (EnableProbes && phase == 0 && airLifted && t >= 6.2f && t < 7.2f)
         {
             var rba = car.GetComponent<Rigidbody>();
-            if (airV0 == 0f) airV0 = Vector3.Dot(rba.velocity, car.transform.forward);
+            if (airV0 == 0f) airV0 = Vector3.Dot(rba.linearVelocity, car.transform.forward);
             rba.AddForce(car.transform.forward * 3000f, ForceMode.Force);
         }
         if (EnableProbes && phase == 0 && airLifted && t >= 7.2f && !airLogged)
         {
             airLogged = true;
             var rba = car.GetComponent<Rigidbody>();
-            float fv = Vector3.Dot(rba.velocity, car.transform.forward);
+            float fv = Vector3.Dot(rba.linearVelocity, car.transform.forward);
             bool grounded = car.Grounded[0] || car.Grounded[1] || car.Grounded[2] || car.Grounded[3];
             log.AppendLine($"[空中實驗] 離地={!grounded} 高度={car.transform.position.y:0.0}m  "
                          + $"前向速度 {airV0:0.00} → {fv:0.00} m/s（理論應 +3.09）"
@@ -191,7 +191,7 @@ public class DriveSelfTest : MonoBehaviour
         if (phase == 0 && timeline.Count < 24 && t >= timeline.Count * 0.4f)
         {
             var rb0 = car.GetComponent<Rigidbody>();
-            timeline.Add($"t={t:0.0}s v={rb0.velocity.magnitude:0.00}m/s 前向={Vector3.Dot(rb0.velocity, car.transform.forward):0.00} ωRL={car.WheelOmega[2]:0.0} 合力={Vector3.Dot(car.LastTotalForce, car.transform.forward):0}N");
+            timeline.Add($"t={t:0.0}s v={rb0.linearVelocity.magnitude:0.00}m/s 前向={Vector3.Dot(rb0.linearVelocity, car.transform.forward):0.00} ωRL={car.WheelOmega[2]:0.0} 合力={Vector3.Dot(car.LastTotalForce, car.transform.forward):0}N");
         }
 
         // 取樣
@@ -239,7 +239,7 @@ public class DriveSelfTest : MonoBehaviour
         sb.Append("  車體前向分量=").Append(Vector3.Dot(car.LastTotalForce, car.transform.forward).ToString("0")).Append("N");
         sb.AppendLine();
         var w = car.wheelRL;
-        sb.Append("        剛體 mass=").Append(rb.mass.ToString("0")).Append(" drag=").Append(rb.drag.ToString("0.00"));
+        sb.Append("        剛體 mass=").Append(rb.mass.ToString("0")).Append(" drag=").Append(rb.linearDamping.ToString("0.00"));
         sb.Append("  睡眠=").Append(rb.IsSleeping());
         sb.Append("  ‖ RL WheelCollider: 縱向stiffness=").Append(w.forwardFriction.stiffness.ToString("0.00"));
         sb.Append(" 側向stiffness=").Append(w.sidewaysFriction.stiffness.ToString("0.00"));
@@ -287,8 +287,8 @@ public class DriveSelfTest : MonoBehaviour
     void KickTest()
     {
         var rb = car.GetComponent<Rigidbody>();
-        rb.velocity = car.transform.forward * 8f;
-        log.AppendLine($"[踢一腳] 設定初速 8 m/s，當下實測 {rb.velocity.magnitude:0.00} m/s");
+        rb.linearVelocity = car.transform.forward * 8f;
+        log.AppendLine($"[踢一腳] 設定初速 8 m/s，當下實測 {rb.linearVelocity.magnitude:0.00} m/s");
         kicked = true;
         StartCoroutine(CheckKick(rb));
     }
@@ -297,7 +297,7 @@ public class DriveSelfTest : MonoBehaviour
     {
         yield return new WaitForFixedUpdate();
         yield return new WaitForFixedUpdate();
-        kickVelAfter = rb.velocity.magnitude;
+        kickVelAfter = rb.linearVelocity.magnitude;
         log.AppendLine($"[踢一腳] 兩個物理步之後 {kickVelAfter:0.00} m/s"
                      + (kickVelAfter < 1f ? "  → 速度被吃掉，車子被卡住" : "  → 剛體正常，速度保持"));
         log.AppendLine("[碰撞對象] " + (spy != null && spy.hits.Count > 0
