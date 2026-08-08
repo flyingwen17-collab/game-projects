@@ -406,7 +406,7 @@ public static class P2SceneBuilder
     // ---------- 力士組裝：程序化一體成形，視覺全掛在 Visual 子節點（果凍/搖擺不影響物理）----------
     static SumoWrestler MakeRikishi(string name, Vector3 pos, Mesh body, Mesh mawashi, Mesh armL, Mesh armR,
         Material skin, Material mawashiMat, Material hair, Material eye, Material blush,
-        PhysicMaterial pm, SumoParams p, string display)
+        PhysicsMaterial pm, SumoParams p, string display)
     {
         var root = new GameObject(name);
         root.transform.position = pos;
@@ -417,8 +417,8 @@ public static class P2SceneBuilder
         col.material = pm;
         var rb = root.AddComponent<Rigidbody>();
         rb.mass = 120f;
-        rb.drag = 0.15f;
-        rb.angularDrag = 1.2f;
+        rb.linearDamping = 0.15f;
+        rb.angularDamping = 1.2f;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
         var visual = new GameObject("Visual").transform;
@@ -648,22 +648,22 @@ public static class P2SceneBuilder
         return m;
     }
 
-    static PhysicMaterial MakePhysMat(string name, float staticF, float dynamicF, float bounce)
+    static PhysicsMaterial MakePhysMat(string name, float staticF, float dynamicF, float bounce)
     {
         string dir = "Assets/_Project/Config";
         Directory.CreateDirectory(dir);
         string path = dir + "/" + name + ".physicMaterial";
-        var pm = AssetDatabase.LoadAssetAtPath<PhysicMaterial>(path);
+        var pm = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);
         if (pm == null)
         {
-            pm = new PhysicMaterial(name);
+            pm = new PhysicsMaterial(name);
             AssetDatabase.CreateAsset(pm, path);
         }
         pm.staticFriction = staticF;
         pm.dynamicFriction = dynamicF;
         pm.bounciness = bounce;
-        pm.frictionCombine = PhysicMaterialCombine.Average;
-        pm.bounceCombine = PhysicMaterialCombine.Maximum;
+        pm.frictionCombine = PhysicsMaterialCombine.Average;
+        pm.bounceCombine = PhysicsMaterialCombine.Maximum;
         return pm;
     }
 
@@ -732,7 +732,7 @@ public static class P2SceneBuilder
         string outDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Screenshots");
         Directory.CreateDirectory(outDir);
 
-        var cam = Object.FindObjectOfType<Camera>();
+        var cam = Object.FindAnyObjectByType<Camera>();
         var rig = cam.GetComponent<CameraRig>();
         if (rig != null) rig.enabled = false;
 

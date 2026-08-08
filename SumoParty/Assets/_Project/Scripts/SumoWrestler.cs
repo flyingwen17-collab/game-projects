@@ -91,7 +91,7 @@ public class SumoWrestler : MonoBehaviour
         moveInput = Vector2.zero;
         // 出局交還完整物理：解鎖旋轉、順著飛行方向翻滾摔出去
         rb.constraints = RigidbodyConstraints.None;
-        Vector3 dir = rb.velocity.sqrMagnitude > 0.1f ? rb.velocity.normalized : transform.forward;
+        Vector3 dir = rb.linearVelocity.sqrMagnitude > 0.1f ? rb.linearVelocity.normalized : transform.forward;
         Vector3 axis = Vector3.Cross(Vector3.up, dir);
         rb.AddTorque(axis * 6f + Random.insideUnitSphere * 1.5f, ForceMode.VelocityChange);
     }
@@ -103,7 +103,7 @@ public class SumoWrestler : MonoBehaviour
         Vector3 fwd = transform.forward; fwd.y = 0f;
         transform.rotation = Quaternion.LookRotation(fwd.sqrMagnitude > 0.01f ? fwd : Vector3.forward);
         rb.constraints = RigidbodyConstraints.FreezeRotation;
-        rb.velocity = Vector3.zero;
+        rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         Eliminated = false;
         Stamina = P.staminaMax;
@@ -137,7 +137,7 @@ public class SumoWrestler : MonoBehaviour
     {
         if (Eliminated) return; // 出局後交給物理自由落體
 
-        Vector3 v = rb.velocity;
+        Vector3 v = rb.linearVelocity;
         Vector3 target = CanAct()
             ? transform.TransformDirection(new Vector3(moveInput.x, 0f, moveInput.y)) * P.moveSpeed
             : Vector3.zero;
@@ -145,6 +145,6 @@ public class SumoWrestler : MonoBehaviour
         // 被推飛的 0.5 秒內操控力變弱，讓衝量吃得出來
         float control = knockTimer > 0f ? 2f : 8f;
         Vector3 h = Vector3.Lerp(new Vector3(v.x, 0f, v.z), target, control * Time.fixedDeltaTime);
-        rb.velocity = new Vector3(h.x, v.y, h.z);
+        rb.linearVelocity = new Vector3(h.x, v.y, h.z);
     }
 }

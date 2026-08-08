@@ -45,7 +45,7 @@ public class WrestlerVisuals : MonoBehaviour
         float squash = Mathf.Clamp(jiggle, -0.35f, 0.45f);
 
         // ---- 搖擺步 ----
-        Vector3 v = rb != null ? rb.velocity : Vector3.zero;
+        Vector3 v = rb != null ? rb.linearVelocity : Vector3.zero;
         float speed = new Vector3(v.x, 0f, v.z).magnitude;
         float gait = Mathf.Clamp01(speed / 2.5f);
         waddlePhase += speed * 5.5f * dt;

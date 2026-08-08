@@ -143,7 +143,7 @@ public static class P1Tools
         string outDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Screenshots");
         Directory.CreateDirectory(outDir);
 
-        var cam = Object.FindObjectOfType<Camera>();
+        var cam = Object.FindAnyObjectByType<Camera>();
         Shoot(cam, Path.Combine(outDir, "graybox_overview.png"));
 
         // 第二角度：低角度看俵際
