@@ -15,9 +15,6 @@ using UnityEngine;
 /// </summary>
 public class PerfSampler : MonoBehaviour
 {
-    public const string FlagKey = "SumoParty.PerfRun";
-    public const string TagKey = "SumoParty.PerfTag";
-
     const float WarmupSeconds = 4f;    // 著色器變體 + GC 穩定
     const float SampleSeconds = 12f;
 
@@ -33,17 +30,32 @@ public class PerfSampler : MonoBehaviour
     readonly List<long> triangleSamples = new List<long>(2048);
     readonly List<long> gcSamples = new List<long>(2048);
 
-#if UNITY_EDITOR
+    /// <summary>
+    /// 由命令列參數觸發：<c>SumoParty.exe -perftest &lt;tag&gt;</c>
+    /// 用參數而不是 EditorPrefs，才能在打包後的執行檔裡運作——
+    /// batch mode 的 Play 不真的算圖（實測 12 秒只跑 1 幀），量不到任何東西。
+    /// </summary>
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoStart()
     {
-        if (!UnityEditor.EditorPrefs.GetBool(FlagKey, false)) return;
+        var args = System.Environment.GetCommandLineArgs();
+        string t = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] != "-perftest") continue;
+            t = (i + 1 < args.Length) ? args[i + 1] : "run";
+            break;
+        }
+        if (t == null) return;
+
+        // 關垂直同步與幀率上限，否則 60 FPS 天花板會把差異整個藏起來
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = -1;
+
         var go = new GameObject("~PerfSampler");
         DontDestroyOnLoad(go);
-        var s = go.AddComponent<PerfSampler>();
-        s.runTag = UnityEditor.EditorPrefs.GetString(TagKey, "run");
+        go.AddComponent<PerfSampler>().runTag = t;
     }
-#endif
 
     void OnEnable()
     {
@@ -107,15 +119,16 @@ public class PerfSampler : MonoBehaviour
         sb.AppendLine(Avg("Triangles", triangleSamples));
         sb.AppendLine(Avg("GC Alloc / frame (bytes)", gcSamples) + "   ← 目標 0");
 
-        string outDir = Path.Combine(Application.dataPath, "../Screenshots");
-        Directory.CreateDirectory(outDir);
+        // 結果寫在執行檔旁邊（編輯器裡則是專案根目錄），位置好預測
+        string outDir = Path.Combine(Application.dataPath, "..");
         string file = Path.Combine(outDir, "perf_" + runTag + ".txt");
-        File.WriteAllText(file, sb.ToString());
+        File.WriteAllText(file, sb.ToString(), new UTF8Encoding(true));
         Debug.Log(sb.ToString());
 
 #if UNITY_EDITOR
-        UnityEditor.EditorPrefs.SetBool(FlagKey, false);
         UnityEditor.EditorApplication.Exit(0);
+#else
+        Application.Quit(0);
 #endif
     }
 

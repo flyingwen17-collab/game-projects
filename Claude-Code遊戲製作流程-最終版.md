@@ -245,6 +245,18 @@ P0 一頁企劃(含畫質檔位) → P1 灰盒原型 → P2 垂直切片(首批�
 | Kenney 車體卡通比例 → 輪子縮進車殼 | 輪距取模型實寬；視覺輪放大 1.3 倍（物理半徑不動） |
 | kenney.nl 下載連結是 JS 動態產生 | 瀏覽器點 Download 抓帶 hash 的 zip 連結再 curl |
 
+**Unity 6 升級踩到的坑（2026-08-09 回填）**：
+
+| 坑 | 對策 |
+|----|------|
+| 升級移除 `com.unity.textmeshpro`，而 `UnityEngine.UI` 本來是靠它間接帶進來的 → 用到 `Text` 的檔案整批 CS0246 | manifest 手動補 `com.unity.ugui`（版本對齊編輯器內建的那份）。沒用到 UI 的專案不會遇到，所以兩個專案表現會不一樣 |
+| `PhysicMaterial` 改名 `PhysicsMaterial`（**error 級**，會擋住升級） | 直接改名；`PhysicMaterialCombine` 同理 |
+| `rb.velocity`／`rb.drag`／`rb.angularDrag` 棄用 | → `linearVelocity`／`linearDamping`／`angularDamping` |
+| `FindObjectOfType`／`FindObjectsOfType` 棄用 | → `FindAnyObjectByType()`／`FindObjectsByType()`。**注意 Unity 6.5 連 `FindObjectsSortMode` 都棄用了，不可帶該參數**——照舊資料改會改出新的警告 |
+| `GraphicsSettings.renderPipelineAsset` 棄用 | → `defaultRenderPipeline` |
+| URP 17.5 已移除 `m_EnableRenderGraph` | Compatibility Mode 廢止，Render Graph 是唯一路徑，不用也不能設 |
+| URP 的欄位名在小版本間會變，照網路文章猜會寫錯 | 先寫一個 Report 方法用 `SerializedObject` 迭代實際欄位，確認後再寫設定程式（`U6Tools.Report` 就是範本） |
+
 ### 4.6 AI 3D 生成管線（v3.0 新增）
 
 > 2026 的 image-to-3D 已可用（Tripo 約 8 秒出模、內建四邊面重拓樸與 auto-rig；Meshy 有 auto-rig 與動作預設；開源的 Hunyuan3D / TRELLIS 需要大顯卡，**GTX 1060 6GB 跑不動，只能用雲端網頁版**）。
@@ -336,17 +348,27 @@ P0 一頁企劃(含畫質檔位) → P1 灰盒原型 → P2 垂直切片(首批�
 - **動態（v3.0 新增）**：涉及移動/物理的改動，改用**連拍序列**（每 N 個 fixed step 截一張，或錄短片）。一張靜態圖看不出車在抖、力士在滑、動畫在飄。
 - 有問題我先修，修完的才給你過目。
 
-### 關卡 3 — 效能與自測數據（我做，v3.0 新增）
+### 關卡 3 — 效能與自測數據（我做，v3.0 新增；v3.1 修正量測方法）
 
-每次交付附一組 batch mode 自動產出的數字，超標我先修：
+每次交付附一組自動產出的數字，超標我先修：
 
 | 指標 | 怎麼看 |
 |------|--------|
-| FPS / frame time | 對照 §6.1 預算 |
-| Batches / SetPass calls | 暴增通常是材質沒共用或 instancing 沒開 |
+| FPS / frame time（平均 + 1% low） | 對照 §6.1 預算。1% low 才是卡頓感的來源 |
+| SetPass calls（平均 **與峰值**） | 峰值暴增＝實際遊玩會感覺到的卡頓，比平均值重要 |
 | Tris / Verts | 對照三角面預算 |
 | GC Alloc per frame | **目標 0**。每幀配置＝之後必然的卡頓 |
 | 物理自測 log | 見下 |
+
+**量測方法（v3.1 血淚修正，這段一定要照做）**：
+
+1. **不能在編輯器 batch mode 的 Play 裡量。** 實測：12 秒只跑了 1 幀、frame time 13556 ms、draw call 取不到。batch mode 沒有真的繪圖迴圈，量出來的全是假的。
+2. **要打包成獨立執行檔再量**（`PerfHarness.BuildBaseline` / `BuildOptimized` → 跑 exe 帶 `-perftest <tag>`）。這條路順便讓同一套工具能用在 P5 的打包驗證。
+3. **release build 量時間，development build 讀計數器，兩者不可混用。**
+   - `Draw Calls` 與 `GC Alloc` 的計數器只存在於 development build，release 量一定是「無資料」，不是程式壞了。
+   - 但 development build（尤其開了 deep profiling）的額外開銷會蓋掉訊號——實測同一組設定在 release 是「開功能快 12%」，在 dev build 卻變成「慢 13%」。**拿 dev build 比時間會得到相反的結論。**
+4. **取樣前要暖機**（目前 4 秒），並在取樣時**關掉垂直同步與幀率上限**（`vSyncCount = 0`、`targetFrameRate = -1`），否則 60 FPS 天花板會把差異整個藏起來。
+5. 場景還很空的時候，數字只能當「相對比較」，不能當「效能夠用」的證明。P3 量產後必須重測。
 
 **物理自測場景（鐵則）**：每個物理系統都要有一個 headless 自測場景，跑固定腳本輸出數值 log（DriftGame 的 `DriveSelfTest.cs` 就是範本，這是本專案目前最強的一環）。它抓的是「肉眼看不出但數字不對」的 bug——力沒被登記、加速度不符理論值、參數改了卻沒生效。
 
@@ -575,6 +597,7 @@ Unity：專案在 2022.3.36f1；機器上另有 **Unity 6000.5.6f1**（`C:\Progr
 
 | 版本 | 日期 | 主要改動 |
 |------|------|----------|
+| v3.1 | 2026-08-09 | 關卡 3 量測方法血淚修正（batch mode 量不到效能，必須打包成 exe；release 量時間、dev 讀計數器）；回填 Unity 6 升級的七個坑；兩專案升級完成後回填現況 |
 | v3.0 | 2026-08-08 | 畫質檔位決策；AI 3D 生成管線與授權鐵則；Blender headless 後處理；物理鐵則（含實際設定）；效能預算與關卡 3；音訊管線；遠端備份；修正過期內容 |
 | v2.1 | 2026-08-04 | CC0 3D 模型管線（B/D 階段實戰回填） |
 | v2.0 | — | AI 生圖進遊戲管線、四道品保關卡 |

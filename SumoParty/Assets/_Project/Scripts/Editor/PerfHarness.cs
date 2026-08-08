@@ -1,43 +1,70 @@
+using System.IO;
 using UnityEditor;
-using UnityEditor.SceneManagement;
+using UnityEditor.Build.Reporting;
 using UnityEngine;
 
 /// <summary>
-/// 流程 MD §5 關卡 3 的 batch mode 入口。
+/// 流程 MD §5 關卡 3：打包成獨立執行檔再量效能。
 ///
-/// 用法（注意：不能加 -quit，也不能加 -nographics）：
-///   Unity.exe -batchmode -projectPath X -executeMethod PerfHarness.RunBaseline -logFile Y
+/// 為什麼不在編輯器裡量：batch mode 的 Play 不真的算圖（實測 12 秒只跑 1 幀、
+/// draw call 取不到），量出來的數字是假的。只有真的 player 有真的繪圖迴圈。
 ///
-/// executeMethod 只負責進 Play；量完由 PerfSampler 自己呼叫 EditorApplication.Exit(0) 收工。
-/// 加了 -quit 會在進 Play 前就關掉，什麼都量不到。
+///   Unity.exe -batchmode -quit -projectPath X -executeMethod PerfHarness.BuildBaseline
+///   Builds\baseline\SumoParty.exe -perftest baseline -screen-width 1280 -screen-height 720
+///
+/// 量測結果寫在執行檔旁邊的 perf_&lt;tag&gt;.txt，跑完自己結束。
 /// </summary>
 public static class PerfHarness
 {
     const string ScenePath = "Assets/_Project/Scenes/Arena.unity";
 
-    [MenuItem("Sumo/效能量測（目前設定）")]
-    public static void RunCurrent() { Run("current"); }
-
-    /// <summary>對照組：關掉 STP 與 GPU Resident Drawer 再量。</summary>
-    public static void RunBaseline()
+    public static void BuildBaseline()
     {
         U6Tools.DisableFeatures();
-        Run("baseline");
+        Build("baseline");
     }
 
-    /// <summary>實驗組：開啟 STP 與 GPU Resident Drawer 再量。</summary>
-    public static void RunOptimized()
+    public static void BuildOptimized()
     {
         U6Tools.EnableFeatures();
-        Run("optimized");
+        Build("optimized");
     }
 
-    static void Run(string tag)
+    // Draw Calls 與 GC Alloc 的計數器只存在於 development build。
+    // release build 量這兩項一定是「無資料」，不是程式寫錯。
+    public static void BuildDevBaseline()
     {
-        EditorSceneManager.OpenScene(ScenePath);
-        EditorPrefs.SetBool(PerfSampler.FlagKey, true);
-        EditorPrefs.SetString(PerfSampler.TagKey, tag);
-        Debug.Log($"[PerfHarness] 進 Play 量測：{tag}");
-        EditorApplication.EnterPlaymode();
+        U6Tools.DisableFeatures();
+        Build("dev_baseline", true);
+    }
+
+    public static void BuildDevOptimized()
+    {
+        U6Tools.EnableFeatures();
+        Build("dev_optimized", true);
+    }
+
+    static void Build(string tag, bool development = false)
+    {
+        string dir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Builds", tag);
+        Directory.CreateDirectory(dir);
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = new[] { ScenePath },
+            locationPathName = Path.Combine(dir, "SumoParty.exe"),
+            target = BuildTarget.StandaloneWindows64,
+            options = development
+                ? (BuildOptions.Development | BuildOptions.EnableDeepProfilingSupport)
+                : BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log($"[PerfHarness] build [{tag}] {s.result}  大小 {s.totalSize / 1024 / 1024} MB  " +
+                  $"耗時 {s.totalTime.TotalSeconds:0} 秒  → {opts.locationPathName}");
+
+        if (s.result != BuildResult.Succeeded)
+            Debug.LogError($"[PerfHarness] build 失敗：{s.totalErrors} errors");
     }
 }
