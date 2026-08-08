@@ -44,6 +44,21 @@ public static class PerfHarness
         Build("dev_optimized", true);
     }
 
+    /// <summary>APV 開/關的 A/B。畫面驗證只有從 build 截圖才作數（見 PerfSampler 註解）。</summary>
+    public static void BuildApvOff()
+    {
+        U6Tools.EnableFeatures();
+        APVTools.SetLightProbeSystem(0);
+        Build("apv_off");
+    }
+
+    public static void BuildApvOn()
+    {
+        U6Tools.EnableFeatures();
+        APVTools.SetLightProbeSystem(1);
+        Build("apv_on");
+    }
+
     static void Build(string tag, bool development = false)
     {
         string dir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Builds", tag);

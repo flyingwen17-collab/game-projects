@@ -344,6 +344,10 @@ P0 一頁企劃(含畫質檔位) → P1 灰盒原型 → P2 垂直切片(首批�
 
 ### 關卡 2 — 畫面與動態驗證（我做，涉及畫面或物理的改動）
 
+> ⚠️ **v3.1 重要修正：編輯器離線截圖驗證不了光照。**
+> 編輯器裡手動 `Camera.Render()` 到 RenderTexture 的路徑**不套後處理，也不套 APV**（探針系統要執行期才初始化）。實測 APV 從沒烘到烘完整份探針資料，這條路徑拍出來的圖 SHA256 **完全一樣**——會讓人誤判成「功能沒效」或「改動沒生效」。
+> **所以：素材上沒上、位置對不對 → 離線截圖夠用；光照、後處理、間接光 → 一律從打包後的執行檔截圖**（`PerfSampler` 會在暖機結束時自動拍一張）。
+
 - **靜態**：batch mode 進場景算圖截圖，自己先看素材有沒有掛上、位置對不對、光照有沒有炸。
 - **動態（v3.0 新增）**：涉及移動/物理的改動，改用**連拍序列**（每 N 個 fixed step 截一張，或錄短片）。一張靜態圖看不出車在抖、力士在滑、動畫在飄。
 - 有問題我先修，修完的才給你過目。
@@ -443,6 +447,23 @@ P0 一頁企劃(含畫質檔位) → P1 灰盒原型 → P2 垂直切片(首批�
 - [ ] Shadow distance 與 cascade 依場景大小調（不是用預設值）
 - [ ] 靜態物件烘焙 GI；動態物件用 Light Probe
 - [ ] Bloom / Vignette / Color Grading 收尾（別過頭）
+
+**Adaptive Probe Volumes 實戰（2026-08-09 回填，SumoParty 驗證）**：
+
+APV **不是一個開關，是要重新規劃場景光照**。踩過的三個坑都屬於「看起來成功、其實沒做事」：
+
+| 坑 | 症狀 | 對策 |
+|----|------|------|
+| 場景沒東西可烘 | 開了 APV、烘焙也「完成」，但畫面零變化。實際情況：6 個光源全 Realtime、361 個物件全部未標記 Contribute GI | 光源改 **Mixed**（直接光仍即時、保留動態陰影）、靜態物件標 **Contribute GI**，再烘 |
+| 標記靜態時順手加了 Batching Static | 靜態批次會把物件排除在 GPU Resident Drawer 之外，等於把 SetPass 的改善吐回去 | 只加 `ContributeGI \| OccluderStatic \| OccludeeStatic \| ReflectionProbeStatic`，**不要 BatchingStatic**。APV 走探針，也不需要 lightmap UV（設 `receiveGI = LightProbes`） |
+| `AdaptiveProbeVolumes.BakeAsync()` 配 `-quit` | 非同步烘焙被半路砍掉，`Lightmapping.isRunning` 追蹤不到它所以等待迴圈直接放行。log 只有 `Baking Adaptive Probe Volumes` 沒有 `Generating Probe Volume Bricks`，Baking Set 停在 3 KB | batch mode 用**同步**的 `Lightmapping.Bake()`。烘成功的樣子是產出 `CellData.bytes` / `CellSupportData.bytes` 等數 MB 的檔案 |
+
+**驗收 APV 是否真的生效，看三件事**（缺一都可能是假的）：
+1. `Assets/.../<場景> Baking Set*.bytes` 有數 MB 的探針資料，不是只有幾 KB 的設定檔
+2. 打包後的 build 檔案大小明顯變大（SumoParty 實測 104 MB → 109 MB）
+3. **從 build 截圖**比對，不是從編輯器離線截圖（見 §5 關卡 2）
+
+**誠實結論（SumoParty 現況）**：APV 已正確啟用、烘焙、隨 build 出貨，效能成本在雜訊範圍內（1.57 → 1.53 ms），**但畫面看不出差別**。因為這個場景是暗場地 + 土俵聚光燈，沒有值得反彈的間接光。APV 的價值要在有亮面、天光或彩色環境時才出得來——那是重新規劃打光的美術決策，不是設定問題。
 
 **其他鐵則**：
 
@@ -566,30 +587,48 @@ _Assets\AI3D\<批次>_<物件名>\   ← AI 生成模型 + 參考圖 + prompt（
 
 ---
 
-## 10. 現況與下一步（2026-08-08 更新）
+## 10. 現況與下一步（2026-08-09 更新）
 
 **現況**：
 
-| 專案 | 階段 | 狀態 |
-|------|------|------|
-| SumoParty | P2 垂直切片（3D 觀眾席完成） | **主線** |
-| DriftGame | P2 場館版 | 暫緩 |
-| 蚯蚓的一生 | P1 | 凍結 |
+| 專案 | 引擎 | 階段 | 狀態 |
+|------|------|------|------|
+| SumoParty | **6000.5.6f1 / URP 17.5** | P2 垂直切片（3D 觀眾席完成） | **主線** |
+| DriftGame | **6000.5.6f1 / URP 17.5** | P2 場館版 | 暫緩 |
+| 蚯蚓的一生 | 2022.3.36f1 | P1 | 凍結（升級待辦） |
 
-Unity：專案在 2022.3.36f1；機器上另有 **Unity 6000.5.6f1**（`C:\Program Files\Unity\Hub\Editor`）。
+備份：GitHub public repo `flyingwen17-collab/game-projects`，含 `pre-unity6-sumoparty` / `pre-unity6-driftgame` 還原點。
 
-**已完成（本次 v3.0）**：
+**SumoParty 效能基準線**（1280×720、release build、暖機 4s + 取樣 12s）：
+
+| | 關功能 | 開功能（STP + GPU Resident Drawer） |
+|---|---|---|
+| 平均 frame time | 1.83 ms（547.9 FPS） | **1.61 ms（621.4 FPS）** |
+| 1% low FPS | 410.4 | 418.4 |
+| SetPass 平均／峰值 | 38 ／ **3996** | 37 ／ **44** |
+| 三角面 | 1.14 M | 1.12 M（§6.1 預算 1.5 M 內）|
+
+最大收益是 SetPass 峰值被抹平（卡頓尖峰的來源），不是平均 FPS。
+⚠️ 場景仍空，離 60 FPS 天花板很遠，**P3 量產後必須重測**。
+
+**已完成（v3.0 → v3.1）**：
 - [x] 定畫質檔位 = B 半寫實
-- [x] 物理設定套用到 DriftGame / SumoParty 並確認腳本安全（§6.4）
+- [x] 物理設定套用到兩專案並確認腳本安全（§6.4）
 - [x] AI 3D 生成納入流程，授權規則明訂（§4.6 / §4.9）
+- [x] 兩專案升 Unity 6，API 全部清乾淨，**0 error 0 warning**
+- [x] URP 功能：STP + Render Scale 0.75 + GPU Resident Drawer + GPU Occlusion Culling + Reflection Probe Blending/Box Projection
+- [x] §5 關卡 3 量測 harness（打包 → 跑 exe → 吐數字 → 附截圖），已產出真實基準線
+- [x] APV 啟用並烘焙（但此場景看不出差別，原因見 §6.3）
+- [x] 遠端備份
 
 **下一步（依投報率排序）**：
 
-1. **SumoParty 升 Unity 6 試水**——可拿到 Adaptive Probe Volumes（間接光質感跳一階）、GPU Resident Drawer（draw call 大砍，1060 受益最大）、STP（低解析度算圖再升頻，約等於白賺 30～40% 效能）。**不用多做一張美術，畫質和幀數同時上去，是目前投報率最高的一項。** 升級前打 tag，出問題可回退；成功後 DriftGame 跟進。
-2. **設 git remote 並 push**——目前最大的單點風險，10 分鐘的事。
-3. **建 §5 關卡 3 的自動量測腳本**（FPS / batches / tris / GC + 物理自測整合成一鍵）。
-4. **建 §4.7 的 Blender headless 後處理腳本**。
-5. 依 §6.3 清單把 SumoParty 的光照後處理逐項補齊到 B 檔標準。
+1. **修每幀 GC 配置**（`BUGS.md`）——目前約 2000 bytes/frame、峰值 231 KB，違反 §6.1 鐵則。場景還空所以不明顯，P3 會浮現。
+2. **`SumoWrestler` 在 `Update` 直接設 `transform.rotation`**（`BUGS.md`）——跟物理求解器搶控制權，改 `MoveRotation`。
+3. **重新規劃 Arena 打光**，讓 APV 有東西可反彈（亮面／天光／彩色環境），畫質才吃得到 B 檔標準。需要你的美術判斷。
+4. **建 §4.7 的 Blender headless 後處理腳本**——AI 3D 與 CC0 模型進遊戲前的必經站，目前還是手動。
+5. **蚯蚓的一生升 Unity 6**（照 §4.5 的坑表走，會比前兩次快很多）。
+6. 依 §6.3 清單把光照後處理逐項補齊到 B 檔標準。
 
 ---
 
@@ -597,7 +636,7 @@ Unity：專案在 2022.3.36f1；機器上另有 **Unity 6000.5.6f1**（`C:\Progr
 
 | 版本 | 日期 | 主要改動 |
 |------|------|----------|
-| v3.1 | 2026-08-09 | 關卡 3 量測方法血淚修正（batch mode 量不到效能，必須打包成 exe；release 量時間、dev 讀計數器）；回填 Unity 6 升級的七個坑；兩專案升級完成後回填現況 |
+| v3.1 | 2026-08-09 | 關卡 3 量測方法血淚修正（batch mode 量不到效能，必須打包成 exe；release 量時間、dev 讀計數器）；關卡 2 修正（離線截圖驗證不了光照與後處理，要從 build 截圖）；回填 Unity 6 升級的七個坑與 APV 的三個坑；兩專案升級完成後回填現況 |
 | v3.0 | 2026-08-08 | 畫質檔位決策；AI 3D 生成管線與授權鐵則；Blender headless 後處理；物理鐵則（含實際設定）；效能預算與關卡 3；音訊管線；遠端備份；修正過期內容 |
 | v2.1 | 2026-08-04 | CC0 3D 模型管線（B/D 階段實戰回填） |
 | v2.0 | — | AI 生圖進遊戲管線、四道品保關卡 |

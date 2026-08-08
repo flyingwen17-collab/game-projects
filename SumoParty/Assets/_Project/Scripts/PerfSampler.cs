@@ -82,6 +82,12 @@ public class PerfSampler : MonoBehaviour
             if (elapsed < WarmupSeconds) return;
             sampling = true;
             elapsed = 0f;
+
+            // 暖機結束的當下截一張。這是唯一可信的畫面驗證路徑——
+            // 編輯器離線 Camera.Render() 到 RenderTexture 不套後處理，也不套 APV
+            // （探針系統要執行期初始化），拿它驗光照改動會得到「零變化」的假象。
+            ScreenCapture.CaptureScreenshot(
+                Path.Combine(Application.dataPath, "..", "shot_" + runTag + ".png"));
             return;
         }
 

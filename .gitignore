@@ -55,3 +55,7 @@ SumoParty/Screenshots/
 
 # ---- 下載的 CC0 原始素材包（可由 CREDITS.md 的來源重新下載）----
 _Assets/
+
+# 效能量測產出的 build（可重新產生）
+SumoParty/Builds/
+DriftGame/Builds/
