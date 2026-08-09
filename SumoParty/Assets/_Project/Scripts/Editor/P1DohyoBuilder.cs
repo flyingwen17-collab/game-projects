@@ -97,6 +97,30 @@ public static class P1DohyoBuilder
         var hud = mgr.AddComponent<SumoDebugHUD>();
         hud.match = match;
 
+        // 手部動作（純視覺，P2 換模型後同一套目標點餵給 IK）。
+        // 材質必須在編輯期指定成資產 —— 執行期預設材質在 URP build 會變洋紅
+        var skin = Mat("M_Skin", new Color(0.85f, 0.65f, 0.52f));
+        var handsE = east.gameObject.AddComponent<RikishiHands>();
+        handsE.rikishi = east; handsE.handMaterial = skin;
+        var handsW = west.gameObject.AddComponent<RikishiHands>();
+        handsW.rikishi = west; handsW.handMaterial = skin;
+
+        // 音訊總監（音檔沒生成也不會壞，只是沒聲音）
+        var audio = mgr.AddComponent<SumoAudioDirector>();
+        audio.match = match;
+        audio.impactLight = Clip("impact_light");
+        audio.impactMid = Clip("impact_mid");
+        audio.impactHeavy = Clip("impact_heavy");
+        audio.slap = Clip("slap");
+        audio.stomp = Clip("stomp");
+        audio.shoutA = Clip("shout_a");
+        audio.shoutB = Clip("shout_b");
+        audio.grunt = Clip("grunt");
+        audio.crowdLoop = Clip("crowd_loop");
+        audio.crowdRoar = Clip("crowd_roar");
+        audio.taikoBase = Clip("taiko_base");
+        audio.taikoIntense = Clip("taiko_intense");
+
         AddDriver(east, cfg, SumoTouchZone.Half.Left, false,
                   KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.LeftShift);
         AddDriver(west, cfg, SumoTouchZone.Half.Right, true,
@@ -180,6 +204,9 @@ public static class P1DohyoBuilder
         Debug.Log($"[P1DohyoBuilder] 建立參數檔 {ConfigPath}");
         return cfg;
     }
+
+    static AudioClip Clip(string name)
+        => AssetDatabase.LoadAssetAtPath<AudioClip>($"Assets/_Project/Audio/{name}.wav");
 
     static Material Mat(string name, Color c)
     {

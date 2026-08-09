@@ -133,8 +133,10 @@ public class SumoMatch : MonoBehaviour
 
     float EdgeCloseness(Rikishi r)
     {
-        float d = r.DistanceFromCenter(Center);
-        return Mathf.Clamp01(d / cfg.dohyoRadius);
+        // 只有真的逼近俵線（70% 半徑之後）才算緊張——
+        // 開場站位在 45% 半徑，不該一開場激烈度就 0.38
+        float d = r.DistanceFromCenter(Center) / cfg.dohyoRadius;
+        return Mathf.Clamp01((d - 0.7f) / 0.3f);
     }
 
     void CheckDecision()

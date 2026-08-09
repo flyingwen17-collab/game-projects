@@ -33,6 +33,9 @@ public class Rikishi : MonoBehaviour
     public bool Active { get; set; } = true;
     public float TiltAngle => Vector3.Angle(transform.up, Vector3.up);
     public Vector3 Velocity => rb != null ? rb.linearVelocity : Vector3.zero;
+    /// <summary>正在持續推/拉（手部動畫用）。</summary>
+    public bool Thrusting => sustainTimer > 0f && sustainKind != Sustain.Hiki;
+    public bool Pulling => sustainTimer > 0f && sustainKind == Sustain.Hiki;
 
     /// <summary>撞擊事件（衝量大小、世界座標）——音效與特效掛這裡。</summary>
     public event Action<float, Vector3> OnImpact;
