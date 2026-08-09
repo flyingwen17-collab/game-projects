@@ -16,7 +16,7 @@ using UnityEngine;
 /// </summary>
 public static class PerfHarness
 {
-    const string ScenePath = "Assets/_Project/Scenes/Arena.unity";
+    const string ScenePath = "Assets/_Project/Scenes/P1_Dohyo.unity";
 
     public static void BuildBaseline()
     {

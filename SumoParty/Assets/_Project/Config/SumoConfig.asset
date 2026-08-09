@@ -1,0 +1,65 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 221ef675013603d428338c4cdc600f53, type: 3}
+  m_Name: SumoConfig
+  m_EditorClassIdentifier: Assembly-CSharp::SumoConfig
+  mass: 150
+  centerOfMassHeight: 0.62
+  shoulderHeight: 1.35
+  mawashiHeight: 0.85
+  balanceTorque: 2600
+  balanceDamping: 420
+  facingTorque: 900
+  fallAngle: 52
+  lowCpBalance: 0.25
+  footGrip: 2600
+  moveForce: 900
+  thrustForce: 3200
+  thrustRange: 1.55
+  thrustAngle: 70
+  thrustCP: 8
+  thrustCooldown: 0.26
+  chargeForce: 6200
+  chargeDuration: 0.32
+  chargeCP: 24
+  chargeCooldown: 1.15
+  chargeBreakThrough: 0.75
+  retreatForce: 2400
+  pullDownForce: 3800
+  retreatCP: 9
+  retreatCooldown: 0.5
+  sidestepImpulse: 6.2
+  sidestepCP: 12
+  sidestepCooldown: 0.85
+  sidestepVulnerable: 0.32
+  whiffStumble: 2600
+  braceResist: 0.7
+  braceCPPerSec: 15
+  braceReflectCP: 7
+  gripRange: 1.3
+  gripHoldTime: 0.22
+  gripBreakForce: 4200
+  yoriForce: 2800
+  hikiForce: 2300
+  throwTorque: 2400
+  shakeForce: 1100
+  gripCPPerSec: 6
+  cpMax: 100
+  cpRegenPerSec: 20
+  cpRegenDelay: 0.55
+  dohyoRadius: 2.275
+  matchTime: 60
+  tachiaiWindow: 0.6
+  tachiaiBonus: 1.4
+  swipeThreshold: 0.055
+  tapMaxTime: 0.22
+  holdMinTime: 0.16

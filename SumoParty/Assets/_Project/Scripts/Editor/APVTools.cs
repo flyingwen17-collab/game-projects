@@ -15,7 +15,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class APVTools
 {
-    const string ScenePath = "Assets/_Project/Scenes/Arena.unity";
+    const string ScenePath = "Assets/_Project/Scenes/P1_Dohyo.unity";
 
     // ---------- 探勘 ----------
 
@@ -137,7 +137,7 @@ public static class APVTools
             // 會動的東西不能標靜態：力士、任何有剛體或動畫的物件
             bool dynamic = go.GetComponentInParent<Rigidbody>() != null
                         || go.GetComponentInParent<Animator>() != null
-                        || go.GetComponentInParent<SumoWrestler>() != null;
+                        || go.GetComponentInParent<Rikishi>() != null;
             if (dynamic) { skipped++; continue; }
 
             GameObjectUtility.SetStaticEditorFlags(go, Flags);

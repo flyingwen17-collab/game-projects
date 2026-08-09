@@ -15,7 +15,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class U6Tools
 {
-    const string ScenePath = "Assets/_Project/Scenes/Arena.unity";
+    const string ScenePath = "Assets/_Project/Scenes/P1_Dohyo.unity";
 
     // ---------- 1. 探勘：這個 URP 版本到底有哪些可設的欄位 ----------
 
@@ -175,8 +175,6 @@ public static class U6Tools
         var cam = UnityEngine.Object.FindAnyObjectByType<Camera>();
         if (cam == null) { Debug.LogError("[U6] 場景裡沒有相機"); return; }
 
-        var rig = cam.GetComponent<CameraRig>();
-        if (rig != null) rig.enabled = false;   // 別讓 rig 把相機拉回去
 
         var sb = new StringBuilder($"=== U6 CAPTURE [{tag}] ===\n");
 
