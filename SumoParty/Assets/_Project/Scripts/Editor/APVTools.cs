@@ -15,7 +15,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class APVTools
 {
-    const string ScenePath = "Assets/_Project/Scenes/P1_Dohyo.unity";
+    const string ScenePath = "Assets/_Project/Scenes/Dohyo.unity";
 
     // ---------- 探勘 ----------
 

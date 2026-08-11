@@ -19,6 +19,7 @@ public class SumoAudioDirector : MonoBehaviour
     public AudioClip shoutA, shoutB, grunt;
     public AudioClip crowdLoop, crowdRoar;
     public AudioClip taikoBase, taikoIntense;
+    public AudioClip grab, creak;
 
     [Header("混音")]
     [Range(0f, 1f)] public float masterSfx = 0.9f;
@@ -69,6 +70,7 @@ public class SumoAudioDirector : MonoBehaviour
     {
         r.OnImpact += (force, pos) => PlayImpact(force);
         r.OnAction += (gesture, gripped) => PlayAction(r, gesture, gripped);
+        r.OnGrip += () => PlayOneShot(grab, 0.75f * masterSfx, Random.Range(0.95f, 1.05f));
     }
 
     // ---------- 事件 ----------
@@ -83,6 +85,15 @@ public class SumoAudioDirector : MonoBehaviour
         float vol = Mathf.Clamp01(force / 7000f) * 0.7f + 0.3f;
         float pitch = Random.Range(0.92f, 1.08f) * Mathf.Lerp(1.1f, 0.85f, Mathf.Clamp01(force / 7000f));
         PlayOneShot(clip, vol * masterSfx, pitch);
+
+        // 重擊 → 觀眾即時驚呼（不等激烈度慢慢爬，情緒是瞬間的）
+        if (force >= 4500f && !roarSrc.isPlaying)
+        {
+            roarSrc.clip = crowdRoar;
+            roarSrc.volume = crowdMax * 0.45f;
+            roarSrc.pitch = Random.Range(1.05f, 1.15f);   // 短促「喔！」
+            roarSrc.Play();
+        }
     }
 
     void PlayAction(Rikishi r, SumoGesture g, bool gripped)
@@ -95,6 +106,11 @@ public class SumoAudioDirector : MonoBehaviour
             case SumoGesture.Left when gripped:          // 投げ：大吼
             case SumoGesture.Right when gripped:
                 PlayOneShot(shoutB, 0.9f * masterSfx, Random.Range(0.9f, 1.0f));
+                break;
+            case SumoGesture.Forward when gripped:       // 寄り：發力喝 + 廻し緊繃
+            case SumoGesture.Back when gripped:          // 引き：同
+                PlayOneShot(creak, 0.7f * masterSfx, Random.Range(0.9f, 1.1f));
+                PlayOneShot(grunt, 0.6f * masterSfx, Random.Range(0.85f, 0.95f));
                 break;
             case SumoGesture.Tap:                        // 突き：短喝 + 拍擊
                 PlayOneShot(grunt, 0.5f * masterSfx, Random.Range(0.95f, 1.15f));

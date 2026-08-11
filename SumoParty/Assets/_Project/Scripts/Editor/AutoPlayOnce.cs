@@ -14,7 +14,7 @@ static class AutoPlayOnce
             string flag = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "autoplay_once.flag");
             if (!File.Exists(flag) || EditorApplication.isPlayingOrWillChangePlaymode) return;
             File.Delete(flag);
-            string arena = "Assets/_Project/Scenes/P1_Dohyo.unity";
+            string arena = "Assets/_Project/Scenes/Dohyo.unity";
             EditorSceneManager.OpenScene(File.Exists(arena) ? arena : "Assets/_Project/Scenes/Graybox.unity");
             EditorApplication.isPlaying = true;
         };

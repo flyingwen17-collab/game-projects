@@ -15,7 +15,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class U6Tools
 {
-    const string ScenePath = "Assets/_Project/Scenes/P1_Dohyo.unity";
+    const string ScenePath = "Assets/_Project/Scenes/Dohyo.unity";
 
     // ---------- 1. 探勘：這個 URP 版本到底有哪些可設的欄位 ----------
 

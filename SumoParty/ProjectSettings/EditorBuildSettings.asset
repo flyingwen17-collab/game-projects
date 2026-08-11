@@ -6,6 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/_Project/Scenes/P1_Dohyo.unity
-    guid: 29ad0e782bad7244e9f4d598016954e6
+    path: Assets/_Project/Scenes/Dohyo.unity
+    guid: ec26352c2804449478fc60131dd5c762
   m_configObjects: {}

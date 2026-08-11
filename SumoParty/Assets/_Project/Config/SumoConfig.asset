@@ -22,13 +22,15 @@ MonoBehaviour:
   fallAngle: 52
   lowCpBalance: 0.25
   footGrip: 2600
+  footDamping: 1400
   moveForce: 900
-  thrustForce: 3200
+  thrustDuration: 0.14
+  thrustForce: 2600
   thrustRange: 1.55
   thrustAngle: 70
   thrustCP: 8
   thrustCooldown: 0.26
-  chargeForce: 6200
+  chargeForce: 7400
   chargeDuration: 0.32
   chargeCP: 24
   chargeCooldown: 1.15
@@ -37,18 +39,18 @@ MonoBehaviour:
   pullDownForce: 3800
   retreatCP: 9
   retreatCooldown: 0.5
-  sidestepImpulse: 6.2
+  sidestepImpulse: 4.6
   sidestepCP: 12
   sidestepCooldown: 0.85
   sidestepVulnerable: 0.32
-  whiffStumble: 2600
+  whiffStumble: 1500
   braceResist: 0.7
   braceCPPerSec: 15
   braceReflectCP: 7
   gripRange: 1.3
   gripHoldTime: 0.22
   gripBreakForce: 4200
-  yoriForce: 2800
+  yoriForce: 3400
   hikiForce: 2300
   throwTorque: 2400
   shakeForce: 1100

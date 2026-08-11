@@ -41,6 +41,8 @@ public class Rikishi : MonoBehaviour
     public event Action<float, Vector3> OnImpact;
     /// <summary>出招事件——給音效與觀眾反應用。</summary>
     public event Action<SumoGesture, bool> OnAction;   // (手勢, 是否在組手狀態)
+    /// <summary>成功抓到對方廻し（推拉音效掛這裡）。</summary>
+    public event Action OnGrip;
 
     Rigidbody rb;
     ConfigurableJoint gripJoint;
@@ -379,6 +381,7 @@ public class Rikishi : MonoBehaviour
         gripJoint.enableCollision = true;
 
         Gripping = true;
+        OnGrip?.Invoke();
     }
 
     void DoGrippedAction(SumoGesture g)

@@ -36,6 +36,8 @@ public static class SumoAudioGen
         Save("crowd_roar", CrowdRoar(2.6f));
         Save("taiko_base", TaikoBase());
         Save("taiko_intense", TaikoIntense());
+        Save("grab", Grab());
+        Save("creak", Creak());
 
         AssetDatabase.Refresh();
 
@@ -176,6 +178,43 @@ public static class SumoAudioGen
             lp += 0.09f * (noise - lp);
             hp = noise - prev; prev = noise;
             s[i] = Mathf.Clamp((lp * 0.9f + hp * 0.12f) * env, -1f, 1f) * 0.9f;
+        }
+        return s;
+    }
+
+    /// <summary>抓廻し：布料抓握聲（中頻噪音抓合 + 小 thump）。</summary>
+    static float[] Grab()
+    {
+        int n = (int)(SR * 0.16f);
+        var s = new float[n];
+        float bp = 0f;
+        for (int i = 0; i < n; i++)
+        {
+            float t = i / (float)SR;
+            float env = Mathf.Exp(-t * 40f);
+            float noise = (float)(rng.NextDouble() * 2 - 1);
+            bp += 0.18f * (noise - bp);                     // ~1.2kHz 布料摩擦感
+            float thump = Mathf.Sin(2f * Mathf.PI * 85f * t) * Mathf.Exp(-t * 55f) * 0.5f;
+            s[i] = Mathf.Clamp((bp * 3.2f + thump) * env, -1f, 1f) * 0.8f;
+        }
+        return s;
+    }
+
+    /// <summary>廻し拉扯的緊繃聲：低頻鋸齒緩慢調變（拉的觸覺回饋）。</summary>
+    static float[] Creak()
+    {
+        int n = (int)(SR * 0.42f);
+        var s = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = i / (float)SR;
+            float p = t / 0.42f;
+            float env = Mathf.Sin(Mathf.Clamp01(p / 0.2f) * Mathf.PI * 0.5f) * Mathf.Exp(-Mathf.Max(0f, p - 0.45f) * 6f);
+            float f0 = 70f + 26f * Mathf.Sin(2f * Mathf.PI * 3.2f * t);   // 緊繃的顫動
+            float v = 0f;
+            for (int h = 1; h <= 6; h++) v += Mathf.Sin(2f * Mathf.PI * f0 * h * t) / h;
+            float grit = (float)(rng.NextDouble() * 2 - 1) * 0.10f;
+            s[i] = Mathf.Clamp((v * 0.32f + grit) * env, -1f, 1f) * 0.7f;
         }
         return s;
     }

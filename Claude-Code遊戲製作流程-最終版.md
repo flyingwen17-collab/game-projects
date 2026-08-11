@@ -498,6 +498,12 @@ APV **不是一個開關，是要重新規劃場景光照**。踩過的三個坑
 5. **不要在 `Update` 直接改 Rigidbody 的 transform**——會跟求解器打架。用 `MoveRotation` / `MovePosition` 在 `FixedUpdate` 做。
    > ⚠️ 已知待修：`SumoWrestler.cs` 的自動轉向目前寫在 `Update` 直接設 `transform.rotation`，接觸時會跟求解器搶控制權。列入 `BUGS.md`。
 6. **車輛不用 WheelCollider**：實測會把車鎖死。用射線懸吊 + 自算胎面力（DriftGame 的 Pacejka 實作是本專案範本）。
+6b. **Cylinder primitive 的碰撞體是 CapsuleCollider，不是圓柱**（2026-08-09 一天踩兩次）：
+   - 當地板/平台用時是「圓頂」，東西站上去會自己滑走（土俵實測靜置漂移 1.7m）
+   - 更陰險的是壓扁的大圓盤：CapsuleCollider 最小高度＝直徑，scale (22, 0.05, 22) 會變成
+     **半徑 11m 的隱形圓頂**穿出地面把整個場景頂在弧面上（實測漂移 8.9m）
+   - 對策：凡是 Cylinder primitive 一律 `DestroyImmediate(collider)`，平面用 BoxCollider、
+     精確圓柱用 MeshCollider（靜態物件可用非凸面）
 7. **所有手感參數進 ScriptableObject**，調參數不改程式碼、不重編譯。
 8. **每個物理系統配一個 headless 自測場景**（§5.3）。
 
