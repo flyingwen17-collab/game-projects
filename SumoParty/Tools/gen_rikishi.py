@@ -50,6 +50,15 @@ parts.append(sphere("shoR",     (-0.37, 0, 1.44), (0.17, 0.16, 0.14)))
 parts.append(cyl("neck",        (0, -0.02, 1.55), 0.15, 0.14))
 parts.append(sphere("chin",     (0, -0.13, 1.58), (0.12, 0.10, 0.08)))
 parts.append(sphere("head",     (0, -0.02, 1.72), (0.18, 0.19, 0.20)))   # 加大：要撐得過平滑
+# 五官（面朝 -Y）：尺寸抓 3~6cm，才撐得過 12 次平滑
+parts.append(sphere("nose",     (0, -0.215, 1.70),  (0.035, 0.05, 0.05)))
+parts.append(sphere("browL",    (0.065, -0.18, 1.77),  (0.05, 0.028, 0.022)))
+parts.append(sphere("browR",    (-0.065, -0.18, 1.77), (0.05, 0.028, 0.022)))
+parts.append(sphere("cheekL",   (0.095, -0.165, 1.665),  (0.06, 0.05, 0.05)))   # 力士的圓頰
+parts.append(sphere("cheekR",   (-0.095, -0.165, 1.665), (0.06, 0.05, 0.05)))
+parts.append(sphere("jaw",      (0, -0.155, 1.615), (0.095, 0.06, 0.05)))
+parts.append(sphere("earL",     (0.19, -0.02, 1.71),  (0.022, 0.05, 0.062)))
+parts.append(sphere("earR",     (-0.19, -0.02, 1.71), (0.022, 0.05, 0.062)))
 for sx in (1, -1):
     # 腿加粗、站距加寬：平滑會收縮細長特徵，腿太近會被熔成一支圓錐
     parts.append(sphere(f"thigh{sx}", (0.24*sx, 0, 0.50), (0.22, 0.23, 0.30)))
@@ -110,10 +119,45 @@ bpy.context.view_layer.objects.active = hair
 bpy.ops.object.join()
 bpy.ops.object.shade_smooth()
 
+# ---------- 眼睛（獨立深色物件，不參與平滑——幾何做不出眼白，用色塊對比） ----------
+eyes = []
+for sx in (1, -1):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=(0.058*sx, -0.196, 1.735),
+                                         segments=12, ring_count=8)
+    e = bpy.context.active_object
+    e.scale = (0.018, 0.008, 0.013)
+    bpy.ops.object.transform_apply(scale=True)
+    eyes.append(e)
+for o in bpy.data.objects: o.select_set(False)
+for o in eyes: o.select_set(True)
+bpy.context.view_layer.objects.active = eyes[0]
+bpy.ops.object.join()
+eyeObj = bpy.context.active_object
+eyeObj.name = "Eyes"
+
+# 眉毛（深色細條，貼在眉骨上）
+brows = []
+for sx in (1, -1):
+    bpy.ops.mesh.primitive_cube_add(location=(0.065*sx, -0.203, 1.775))
+    b = bpy.context.active_object
+    b.scale = (0.042, 0.008, 0.009)
+    b.rotation_euler = (0, 0.12 * -sx, 0)
+    bpy.ops.object.transform_apply(scale=True, rotation=True)
+    brows.append(b)
+for o in bpy.data.objects: o.select_set(False)
+for o in brows: o.select_set(True)
+bpy.context.view_layer.objects.active = brows[0]
+bpy.ops.object.join()
+browObj = bpy.context.active_object
+browObj.name = "EyeBrows"
+
 # 材質（Unity 端會依物件名稱換成 URP 材質，這裡只是佔位）
 body.data.materials.append(mat("M_Skin", (0.72, 0.53, 0.40)))
 maw.data.materials.append(mat("M_Mawashi", (0.18, 0.22, 0.45)))
-hair.data.materials.append(mat("M_Hair", (0.05, 0.04, 0.04)))
+hair_m = mat("M_Hair", (0.05, 0.04, 0.04))
+hair.data.materials.append(hair_m)
+eyeObj.data.materials.append(hair_m)
+browObj.data.materials.append(hair_m)
 
 # ---------- 匯出 ----------
 out = "E:/Tools/rikishi_base.fbx"

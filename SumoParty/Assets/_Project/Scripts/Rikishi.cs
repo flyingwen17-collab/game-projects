@@ -43,6 +43,8 @@ public class Rikishi : MonoBehaviour
     public event Action<SumoGesture, bool> OnAction;   // (手勢, 是否在組手狀態)
     /// <summary>成功抓到對方廻し（推拉音效掛這裡）。</summary>
     public event Action OnGrip;
+    /// <summary>踉蹌踏步（速度）。跺地音與腳邊塵土掛這裡。</summary>
+    public event Action<float> OnStep;
 
     Rigidbody rb;
     ConfigurableJoint gripJoint;
@@ -50,6 +52,7 @@ public class Rikishi : MonoBehaviour
     SumoGesture pending = SumoGesture.None;
 
     float chargeTimer, vulnerableTimer, cpIdleTimer, holdTimer;
+    float stepTimer, hitStunTimer;
 
     /// <summary>持續施力的種類。真實的推/拉都有時間長度，不是單幀脈衝。</summary>
     enum Sustain { None, Thrust, Yori, Hiki }
@@ -113,6 +116,7 @@ public class Rikishi : MonoBehaviour
         Balance(dt);
         Facing();
         FootGrip();
+        Stagger(dt);
         Stamina(dt);
 
         if (pending != SumoGesture.None)
@@ -130,6 +134,7 @@ public class Rikishi : MonoBehaviour
         chargeTimer = Mathf.Max(0f, chargeTimer - dt);
         sustainTimer = Mathf.Max(0f, sustainTimer - dt);
         vulnerableTimer = Mathf.Max(0f, vulnerableTimer - dt);
+        hitStunTimer = Mathf.Max(0f, hitStunTimer - dt);
         thrustCd = Mathf.Max(0f, thrustCd - dt);
         chargeCd = Mathf.Max(0f, chargeCd - dt);
         sidestepCd = Mathf.Max(0f, sidestepCd - dt);
@@ -143,6 +148,8 @@ public class Rikishi : MonoBehaviour
         if (BodyTouchedGround) return;      // 倒了就交給物理，不再撐
 
         float cpFactor = Mathf.Lerp(cfg.lowCpBalance, 1f, CPRatio);
+        // 被重擊的硬直窗內站不穩（挨打要有挨打的樣子）
+        cpFactor *= Mathf.Lerp(1f, 0.35f, hitStunTimer / 0.45f);
         Vector3 axis = Vector3.Cross(transform.up, Vector3.up);
         if (axis.sqrMagnitude > 1e-6f)
         {
@@ -177,6 +184,32 @@ public class Rikishi : MonoBehaviour
         Vector3 f = -hv * cfg.footDamping;
         if (f.magnitude > maxGrip) f = f.normalized * maxGrip;
         rb.AddForce(f, ForceMode.Force);
+    }
+
+    /// <summary>
+    /// 踉蹌退步——「紙片感」的解藥。
+    /// 真人被推不是平滑滑走（那是冰球），是一步一步頓挫地吸收動量：
+    /// 每步瞬間吃掉一部分水平動量 + 小幅上跳（身體顛簸）+ 跺地事件（音效/塵土）。
+    /// 自己突進時吸收量降低（那是發力的驅動步，不是被動踉蹌）。
+    /// </summary>
+    void Stagger(float dt)
+    {
+        Vector3 hv = rb.linearVelocity; hv.y = 0f;
+        float speed = hv.magnitude;
+        if (speed < 1.1f || Mathf.Abs(rb.linearVelocity.y) > 1.5f)   // 慢速或空中不踏步
+        {
+            stepTimer = 0.05f;
+            return;
+        }
+
+        stepTimer -= dt;
+        if (stepTimer > 0f) return;
+        stepTimer = Mathf.Lerp(0.20f, 0.11f, Mathf.Clamp01(speed / 6f));   // 滑越快步頻越急
+
+        float absorb = Charging ? 0.12f : 0.30f;
+        rb.AddForce(-hv.normalized * (cfg.mass * speed * absorb), ForceMode.Impulse);
+        rb.AddForce(Vector3.up * (cfg.mass * 0.45f), ForceMode.Impulse);
+        OnStep?.Invoke(speed);
     }
 
     void Stamina(float dt)
@@ -442,6 +475,8 @@ public class Rikishi : MonoBehaviour
     {
         if (!Active) return;
         rb.AddForceAtPosition(force, worldPoint, ForceMode.Force);
+        // 挨了重擊後的硬直窗：平衡力暫時衰減，身體會真的被打得搖晃
+        if (force.magnitude > 2500f) hitStunTimer = Mathf.Max(hitStunTimer, 0.45f);
     }
 
     public void Stumble() => vulnerableTimer = Mathf.Max(vulnerableTimer, cfg.sidestepVulnerable);

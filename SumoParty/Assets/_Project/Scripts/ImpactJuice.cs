@@ -30,6 +30,16 @@ public class ImpactJuice : MonoBehaviour
         match.east.OnImpact += OnImpact;
         match.west.OnImpact += OnImpact;
         match.OnBoutEnd += OnBoutEnd;
+        // 踉蹌踏步 → 腳邊小塵土（踩沙地的份量）
+        match.east.OnStep += s => StepDust(match.east, s);
+        match.west.OnStep += s => StepDust(match.west, s);
+    }
+
+    void StepDust(Rikishi r, float speed)
+    {
+        if (dust == null) return;
+        dust.transform.position = r.transform.position + Vector3.up * 0.06f;
+        dust.Emit(Mathf.RoundToInt(2 + Mathf.Min(6f, speed)));
     }
 
     void BuildDust()
@@ -72,6 +82,10 @@ public class ImpactJuice : MonoBehaviour
 
         shake = Mathf.Max(shake, 0.045f + 0.16f * k);
 
+        // 重擊微頓幀（格鬥遊戲的 hit-stop）：一瞬間的凝滯讓衝擊「咬」進去
+        if (force >= 5200f && Mathf.Approximately(Time.timeScale, 1f))
+            StartCoroutine(MicroStop());
+
         if (dust != null)
         {
             dust.transform.position = new Vector3(pos.x, Mathf.Max(0.05f, pos.y * 0.3f), pos.z);
@@ -83,6 +97,13 @@ public class ImpactJuice : MonoBehaviour
     {
         shake = Mathf.Max(shake, 0.22f);
         if (result != BoutResult.TimeUp) StartCoroutine(HitStop());
+    }
+
+    IEnumerator MicroStop()
+    {
+        Time.timeScale = 0.5f;
+        yield return new WaitForSecondsRealtime(0.07f);
+        if (Mathf.Approximately(Time.timeScale, 0.5f)) Time.timeScale = 1f;   // 別蓋掉決着慢動作
     }
 
     IEnumerator HitStop()

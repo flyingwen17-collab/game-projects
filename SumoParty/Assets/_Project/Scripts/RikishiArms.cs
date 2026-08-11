@@ -32,7 +32,7 @@ public class RikishiArms : MonoBehaviour
         {
             upper[i] = MakeLimb($"UpperArm{i}", PrimitiveType.Capsule, UpperThick);
             fore[i] = MakeLimb($"ForeArm{i}", PrimitiveType.Capsule, ForeThick);
-            hand[i] = MakeLimb($"Hand{i}", PrimitiveType.Sphere, HandR);
+            hand[i] = MakeHand($"Hand{i}", Side(i));
             curTarget[i] = Shoulder(i) + Vector3.down * (UpperLen + ForeLen) * 0.8f;
         }
     }
@@ -46,6 +46,42 @@ public class RikishiArms : MonoBehaviour
         if (skinMaterial != null) go.GetComponent<Renderer>().sharedMaterial = skinMaterial;
         if (t == PrimitiveType.Sphere) go.transform.localScale = Vector3.one * (r * 2f);
         return go.transform;
+    }
+
+    /// <summary>真的手：手掌 + 四指 + 拇指（力士的厚手掌）。+Z 是指尖方向。</summary>
+    Transform MakeHand(string n, float sideSign)
+    {
+        var root = new GameObject(n).transform;
+        root.SetParent(transform, false);
+
+        Prim(root, "Palm", PrimitiveType.Capsule,
+             new Vector3(0f, 0f, 0.01f), Quaternion.Euler(90f, 0f, 0f),
+             new Vector3(0.115f, 0.065f, 0.045f));
+
+        for (int f = 0; f < 4; f++)          // 四指：從掌前緣往 +Z 伸
+        {
+            float x = Mathf.Lerp(-0.042f, 0.042f, f / 3f);
+            float len = f == 0 || f == 3 ? 0.065f : 0.08f;   // 食指小指略短
+            Prim(root, $"Finger{f}", PrimitiveType.Capsule,
+                 new Vector3(x, 0.005f, 0.075f + len * 0.5f), Quaternion.Euler(90f, 0f, 0f),
+                 new Vector3(0.024f, len * 0.5f, 0.024f));
+        }
+        Prim(root, "Thumb", PrimitiveType.Capsule,        // 拇指：從掌側斜出
+             new Vector3(0.065f * sideSign, -0.005f, 0.02f), Quaternion.Euler(90f, 35f * sideSign, 0f),
+             new Vector3(0.028f, 0.038f, 0.028f));
+        return root;
+    }
+
+    void Prim(Transform parent, string n, PrimitiveType t, Vector3 pos, Quaternion rot, Vector3 scale)
+    {
+        var go = GameObject.CreatePrimitive(t);
+        go.name = n;
+        Destroy(go.GetComponent<Collider>());
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = pos;
+        go.transform.localRotation = rot;
+        go.transform.localScale = scale;
+        if (skinMaterial != null) go.GetComponent<Renderer>().sharedMaterial = skinMaterial;
     }
 
     float Side(int i) => i == 0 ? -1f : 1f;
@@ -125,6 +161,10 @@ public class RikishiArms : MonoBehaviour
         PlaceCapsule(upper[i], s, elbow, UpperThick);
         PlaceCapsule(fore[i], elbow, wrist, ForeThick);
         hand[i].position = wrist + dir * 0.03f;
+        // 手掌朝向施力方向（指尖對著目標——推就是掌心貼上去）
+        Vector3 fwd = (target - elbow).normalized;
+        if (fwd.sqrMagnitude > 0.01f)
+            hand[i].rotation = Quaternion.LookRotation(fwd, transform.up);
     }
 
     static void PlaceCapsule(Transform t, Vector3 a, Vector3 b, float thick)

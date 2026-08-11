@@ -361,9 +361,13 @@ public static class P2ArenaBuilder
             foreach (var r in rends)
             {
                 if (r.name.Contains("Mawashi")) r.sharedMaterial = mawashiMat;
-                else if (r.name.Contains("Hair")) r.sharedMaterial = hairMat;
+                else if (r.name.Contains("Hair") || r.name.Contains("Eye")) r.sharedMaterial = hairMat;
                 else r.sharedMaterial = skin;
             }
+
+            // 肉體顫動（挨打時脂肪的擠壓回彈）
+            var jiggle = vis.AddComponent<BodyJiggle>();
+            jiggle.rikishi = null;   // Rikishi 稍後才掛上，Reset 後由下面補
         }
         else
         {
@@ -383,6 +387,25 @@ public static class P2ArenaBuilder
         var arms = root.AddComponent<RikishiArms>();
         arms.rikishi = rikishi;
         arms.skinMaterial = skin;
+
+        var jig = root.GetComponentInChildren<BodyJiggle>();
+        if (jig != null) jig.rikishi = rikishi;
+
+        // 接觸摩擦：兩個膠囊互推不能像冰塊一樣滑掉（紙片感來源之一）
+        var pmPath = "Assets/_Project/Config/PM_Rikishi.physicsMaterial";
+        var pm = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(pmPath);
+        if (pm == null)
+        {
+            pm = new PhysicsMaterial("PM_Rikishi")
+            {
+                staticFriction = 0.85f,
+                dynamicFriction = 0.65f,
+                bounciness = 0f,
+                frictionCombine = PhysicsMaterialCombine.Average,
+            };
+            AssetDatabase.CreateAsset(pm, pmPath);
+        }
+        col.material = pm;
 
         return rikishi;
     }

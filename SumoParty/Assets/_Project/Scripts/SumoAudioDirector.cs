@@ -71,6 +71,9 @@ public class SumoAudioDirector : MonoBehaviour
         r.OnImpact += (force, pos) => PlayImpact(force);
         r.OnAction += (gesture, gripped) => PlayAction(r, gesture, gripped);
         r.OnGrip += () => PlayOneShot(grab, 0.75f * masterSfx, Random.Range(0.95f, 1.05f));
+        // 踉蹌踏步：一步一跺，速度越快越重
+        r.OnStep += speed => PlayOneShot(stomp,
+            Mathf.Clamp01(speed / 6f) * 0.5f * masterSfx, Random.Range(0.85f, 1.05f));
     }
 
     // ---------- 事件 ----------
