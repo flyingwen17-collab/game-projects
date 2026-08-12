@@ -149,9 +149,20 @@ public class SumoMatch : MonoBehaviour
         if (west.DistanceFromCenter(Center) > cfg.dohyoRadius) { Decide(east, BoutResult.PushOut); return; }
     }
 
+    /// <summary>本番的決まり手名（給字幕用）。在 ReleaseGrip 前判定。</summary>
+    public string LastKimarite { get; private set; } = "";
+
     void Decide(Rikishi winner, BoutResult result)
     {
         if (Phase == MatchPhase.Kecchaku) return;
+
+        // 決まり手要在鬆手前判：組手狀態下推出界＝寄り切り，散打推出＝押し出し
+        LastKimarite = result switch
+        {
+            BoutResult.PushOut => (winner != null && winner.Gripping) ? "寄り切り" : "押し出し",
+            BoutResult.Down => (winner != null && winner.Gripping) ? "投げ" : "倒し",
+            _ => "時間切れ",
+        };
 
         if (result == BoutResult.TimeUp)
         {

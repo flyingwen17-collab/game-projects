@@ -171,7 +171,15 @@ public static class P2ArenaBuilder
         inner.name = "InnerSand";
         inner.transform.localScale = new Vector3(R * 2f, 0.008f, R * 2f);
         inner.transform.position = new Vector3(0f, 0.006f, 0f);
-        inner.GetComponent<Renderer>().sharedMaterial = Mat("M_Sand", new Color(0.82f, 0.72f, 0.55f));
+        var sandMat = Mat("M_SandTop", new Color(0.95f, 0.92f, 0.88f));
+        var sandTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Art/dohyo_surface.png");
+        if (sandTex != null)
+        {
+            sandMat.mainTexture = sandTex;                       // AI 生成的土俵砂面（sumo01 批）
+            if (sandMat.HasProperty("_BaseMap")) sandMat.SetTexture("_BaseMap", sandTex);
+        }
+        if (sandMat.HasProperty("_Smoothness")) sandMat.SetFloat("_Smoothness", 0.08f);   // 砂不反光
+        inner.GetComponent<Renderer>().sharedMaterial = sandMat;
         Object.DestroyImmediate(inner.GetComponent<Collider>());
 
         // 俵：半埋的稻草袋
@@ -189,6 +197,21 @@ public static class P2ArenaBuilder
             b.transform.localScale = new Vector3(0.12f, 0.17f, 0.12f);
             b.GetComponent<Renderer>().sharedMaterial = tawaraMat;
             Object.DestroyImmediate(b.GetComponent<Collider>());
+        }
+
+        // 徳俵：東西南北四個中點的俵往外退一個俵位（真實土俵的規制——
+        // 原本是讓雨水排出的缺口，比賽中站上徳俵能多撐半步）
+        foreach (float a in new[] { 0f, 90f, 180f, 270f })
+        {
+            float rad = a * Mathf.Deg2Rad;
+            var tk = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            tk.name = $"Tokudawara_{a:0}";
+            tk.transform.SetParent(tawara);
+            tk.transform.position = new Vector3(Mathf.Cos(rad) * (R + 0.14f), 0.035f, Mathf.Sin(rad) * (R + 0.14f));
+            tk.transform.rotation = Quaternion.Euler(90f, -a, 0f);
+            tk.transform.localScale = new Vector3(0.12f, 0.17f, 0.12f);
+            tk.GetComponent<Renderer>().sharedMaterial = tawaraMat;
+            Object.DestroyImmediate(tk.GetComponent<Collider>());
         }
 
         // 仕切り線：中央兩條白線（相距 70cm、各長 90cm）
@@ -248,9 +271,57 @@ public static class P2ArenaBuilder
             Object.DestroyImmediate(tassel.GetComponent<Collider>());
         }
 
+        // 紫幕：吊り屋根下緣的深紫垂幕（本場所的招牌視覺）
+        var curtain = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        curtain.name = "Murasakimaku";
+        curtain.transform.SetParent(roof.transform);
+        curtain.transform.localPosition = new Vector3(0f, -0.32f, 0f);
+        curtain.transform.localScale = new Vector3(5.15f, 0.22f, 5.15f);
+        curtain.GetComponent<Renderer>().sharedMaterial = Mat("M_Murasaki", new Color(0.22f, 0.10f, 0.30f));
+        Object.DestroyImmediate(curtain.GetComponent<Collider>());
+
         // 屋頂不投影：實物的土俵照明來自屋根下方，投影下去會整片蓋黑競技面
         foreach (var r in roof.GetComponentsInChildren<Renderer>())
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        // 幟旗：場邊的彩旗（AI 生成貼圖，本場所外的祭典感）
+        var noboriTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Art/nobori_banner.png");
+        if (noboriTex != null)
+        {
+            string np = "Assets/_Project/Materials/M_Nobori.mat";
+            var nm = AssetDatabase.LoadAssetAtPath<Material>(np);
+            if (nm == null)
+            {
+                nm = new Material(Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Texture"));
+                AssetDatabase.CreateAsset(nm, np);
+            }
+            nm.mainTexture = noboriTex;
+            if (nm.HasProperty("_BaseMap")) nm.SetTexture("_BaseMap", noboriTex);
+            EditorUtility.SetDirty(nm);
+
+            var nobori = new GameObject("Nobori").transform;
+            for (int i = 0; i < 10; i++)
+            {
+                float a = (i + 0.5f) / 10f * Mathf.PI * 2f;
+                var q = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                q.name = $"Nobori_{i:00}";
+                q.transform.SetParent(nobori);
+                q.transform.position = new Vector3(Mathf.Cos(a) * 5.3f, 1.55f, Mathf.Sin(a) * 5.3f);
+                q.transform.LookAt(new Vector3(0f, 1.55f, 0f));
+                q.transform.localScale = new Vector3(0.62f, 2.3f, 1f);
+                q.GetComponent<Renderer>().sharedMaterial = nm;
+                Object.DestroyImmediate(q.GetComponent<Collider>());
+
+                var pole = GameObject.CreatePrimitive(PrimitiveType.Cylinder);   // 旗杆
+                pole.name = $"NoboriPole_{i:00}";
+                pole.transform.SetParent(nobori);
+                pole.transform.position = new Vector3(Mathf.Cos(a) * 5.3f, 1.4f, Mathf.Sin(a) * 5.3f)
+                                        + q.transform.right * 0.33f;
+                pole.transform.localScale = new Vector3(0.04f, 1.45f, 0.04f);
+                pole.GetComponent<Renderer>().sharedMaterial = Mat("M_Pole", new Color(0.35f, 0.25f, 0.15f));
+                Object.DestroyImmediate(pole.GetComponent<Collider>());
+            }
+        }
     }
 
     // ---------- 觀眾席 ----------

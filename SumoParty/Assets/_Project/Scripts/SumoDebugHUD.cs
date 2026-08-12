@@ -7,7 +7,44 @@ using UnityEngine;
 public class SumoDebugHUD : MonoBehaviour
 {
     public SumoMatch match;
-    GUIStyle big, mid;
+    GUIStyle big, mid, callout;
+
+    string subtitle = "";
+    float subtitleUntil;
+    float lastNokotta;
+
+    void Start()
+    {
+        if (match == null) return;
+        match.OnPhaseChange += p =>
+        {
+            if (p == MatchPhase.Shikiri) Say("見合って――", 99f);          // 整個仕切り都掛著
+            else if (p == MatchPhase.Tachiai) Say("はっけよい！", 1.2f);
+        };
+        match.OnBoutEnd += (winner, loser, result) =>
+        {
+            string who = winner == null ? "" : $"　{winner.displayName}の勝ち！";
+            Say($"{match.LastKimarite}！{who}", 3f);
+        };
+        match.OnMatchEnd += w => Say($"勝負あり！　{w.displayName}、優勝！", 6f);
+    }
+
+    void Update()
+    {
+        // 激烈僵持時的「のこった！」（行司的吆喝）
+        if (match != null && match.Phase == MatchPhase.Torikumi &&
+            match.Intensity > 0.55f && Time.time - lastNokotta > 2.2f)
+        {
+            lastNokotta = Time.time;
+            Say("のこった！のこった！", 1.1f);
+        }
+    }
+
+    void Say(string text, float seconds)
+    {
+        subtitle = text;
+        subtitleUntil = Time.unscaledTime + seconds;
+    }
 
     void OnGUI()
     {
@@ -15,8 +52,24 @@ public class SumoDebugHUD : MonoBehaviour
 
         big ??= new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleCenter };
         mid ??= new GUIStyle(GUI.skin.label) { fontSize = 16 };
+        callout ??= new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 44,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter,
+        };
 
         float w = Screen.width, h = Screen.height;
+
+        // 字幕（播報）：黑影 + 金字
+        if (Time.unscaledTime < subtitleUntil && subtitle.Length > 0)
+        {
+            var rect = new Rect(0, h * 0.16f, w, 60);
+            callout.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+            GUI.Label(new Rect(rect.x + 3, rect.y + 3, rect.width, rect.height), subtitle, callout);
+            callout.normal.textColor = new Color(1f, 0.85f, 0.25f);
+            GUI.Label(rect, subtitle, callout);
+        }
 
         // 觸控分區線（企劃書 §1.1：常駐但低調）
         GUI.color = new Color(1f, 1f, 1f, 0.18f);

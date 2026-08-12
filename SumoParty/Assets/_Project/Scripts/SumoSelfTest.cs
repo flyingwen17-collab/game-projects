@@ -120,11 +120,14 @@ public class SumoSelfTest : MonoBehaviour
     {
         Reset();
         yield return Approach();
+        // 先讓防方站穩一拍：防禦指令與第一擊同幀送入時，兩個 FixedUpdate 的
+        // 執行順序不定，Bracing 可能還沒立起來就吃全力一擊（競態，自測抓到 9/10）
+        yield return Idle(0.15f, keepWestHolding: true);
+
         Vector3 before = west.transform.position;
         float cpBefore = east.CP;
         for (int i = 0; i < 4; i++)
         {
-            Feed(west, SumoGesture.None, true);      // 西方持續防禦
             Feed(east, SumoGesture.Tap, false);
             yield return Idle(0.3f, keepWestHolding: true);
         }

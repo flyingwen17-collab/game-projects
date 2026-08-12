@@ -486,8 +486,11 @@ public class Rikishi : MonoBehaviour
 
     void CheckBodyGround(Collision c, bool reportImpact)
     {
-        if (reportImpact && c.impulse.magnitude > 200f)
-            OnImpact?.Invoke(c.impulse.magnitude, c.GetContact(0).point);
+        // ⚠️ 單位統一：碰撞給的是「衝量」(N·s，數百)，而震屏/音效門檻按「力」(N，數千)設。
+        // 直接傳衝量會讓立合い對撞永遠達不到門檻——最重要的衝撞完全沒回饋（實測抓到）。
+        // 換算成等效力：衝量 × 6（≈ 衝量攤在 0.17s 的推擠時間上）
+        if (reportImpact && c.impulse.magnitude > 150f)
+            OnImpact?.Invoke(c.impulse.magnitude * 6f, c.GetContact(0).point);
 
         if (BodyTouchedGround) return;
 
