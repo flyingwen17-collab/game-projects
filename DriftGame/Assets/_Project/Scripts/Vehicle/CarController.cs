@@ -61,6 +61,10 @@ public class CarController : MonoBehaviour
     /// 該輪腳下路面的抓地係數（1=乾柏油、0.55=草地泥土），特效也讀這個決定揚塵顏色
     public float[] SurfaceMu = { 1f, 1f, 1f, 1f };
 
+    /// 各輪實際接地點與路面法線（特效用：胎痕要畫在這裡，不是輪心正下方）
+    [System.NonSerialized] public Vector3[] ContactPoint = new Vector3[4];
+    [System.NonSerialized] public Vector3[] ContactNormal = new Vector3[4];
+
     /// 診斷用：實際算出並施加到剛體的胎面力（車輛座標，x=縱向 y=側向）
     [System.NonSerialized] public Vector2[] LastTireForce = new Vector2[4];
     /// 診斷用：本次 FixedUpdate 施加的合力（世界座標）
@@ -113,6 +117,11 @@ public class CarController : MonoBehaviour
         rb.centerOfMass = new Vector3(0f, spec.cgHeightM - 0.85f, (spec.frontWeightRatio - 0.5f) * spec.wheelbaseM);
         rb.maxAngularVelocity = 8f;
 
+        // 高速物體必開連續碰撞偵測：150km/h = 每個物理步 0.42m，
+        // 離散偵測整個步距直接跳過 0.4m 的護欄 —— 這就是「穿牆」的來源。
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
         // WheelCollider 完全退出物理計算，只留它的 Transform 當輪胎掛點。
         //
         // 為什麼不用它：即使把摩擦 stiffness 歸零，它的輪子仍是實體碰撞體。
@@ -143,6 +152,9 @@ public class CarController : MonoBehaviour
         if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) ResetCar();
     }
 
+    /// 起跑倒數時鎖住操作（含 AI），紅燈熄滅才放行
+    [System.NonSerialized] public bool controlsLocked;
+
     // ---- 自動化測試用的輸入注入（正常遊玩時 useExternalInput 為 false）----
     [System.NonSerialized] public bool useExternalInput;
     [System.NonSerialized] public float externalSteer;
@@ -151,6 +163,14 @@ public class CarController : MonoBehaviour
 
     void ReadInput()
     {
+        if (controlsLocked)
+        {
+            // 起跑倒數：油門轉向全鎖、手煞車拉住（可以催轉速的是引擎不是車輪）
+            steerInput = 0f; throttleInput = 0f;
+            handbrakeInput = true; Handbrake = true;
+            return;
+        }
+
         if (useExternalInput)
         {
             steerInput = Mathf.Clamp(externalSteer, -1f, 1f);
@@ -235,6 +255,8 @@ public class CarController : MonoBehaviour
                 suspensionDrop[i] = travel;                       // 完全伸長
                 WheelWorldPos[i] = origin - up * travel;
                 WheelWorldRot[i] = anchor.rotation;
+                ContactPoint[i] = WheelWorldPos[i] - up * radius;
+                ContactNormal[i] = up;
                 continue;
             }
 
@@ -251,6 +273,8 @@ public class CarController : MonoBehaviour
             TireLoad[i] = load;
             contact[i] = hit.point;
             normal[i] = hit.normal;
+            ContactPoint[i] = hit.point;
+            ContactNormal[i] = hit.normal;
 
             // 懸吊力沿地面法線施加在掛點上
             rb.AddForceAtPosition(hit.normal * load, origin);
@@ -645,6 +669,15 @@ public class CarController : MonoBehaviour
         ZeroMotion();
     }
 
+    /// 移到起跑格（並把這裡設為之後 RespawnAtStart 的家）
+    public void TeleportTo(Vector3 pos, Quaternion rot)
+    {
+        transform.SetPositionAndRotation(pos, rot);
+        spawnPos = pos;
+        spawnRot = rot;
+        ZeroMotion();
+    }
+
     void ZeroMotion()
     {
         // 未選中的車是 kinematic，對 kinematic 剛體寫 velocity 會噴警告
@@ -669,6 +702,8 @@ public class CarController : MonoBehaviour
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
+            // kinematic 剛體只支援 Speculative 連續偵測，先降級再凍結才不噴警告
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             rb.isKinematic = true;
         }
 
@@ -677,6 +712,10 @@ public class CarController : MonoBehaviour
     void OnEnable()
     {
         if (rb == null) rb = GetComponent<Rigidbody>();
-        if (rb != null) rb.isKinematic = false;
+        if (rb != null)
+        {
+            rb.isKinematic = false;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        }
     }
 }

@@ -53,8 +53,10 @@ public static class TrackScenes
         ground.GetComponent<MeshRenderer>().sharedMaterial = groundMat;
         ground.isStatic = true;
 
-        // 路面：濕柏油
-        var roadMat = TrackGen.TexMat("ExpwyAsphalt", TrackGen.Tex("TRK_AsphaltWet"), 0.42f, Vector2.one);
+        // 路面：濕柏油 —— 真實掃描柏油 + 高 smoothness 做出夜雨反光；掃描包缺席才退回合成貼圖
+        var roadMat = PbrLib.Available("Asphalt025C")
+            ? PbrLib.Mat("ExpwyAsphaltPBR", "Asphalt025C", 0.52f, Vector2.one, new Color(0.75f, 0.78f, 0.85f))
+            : TrackGen.TexMat("ExpwyAsphalt", TrackGen.Tex("TRK_AsphaltWet"), 0.42f, Vector2.one);
         TrackGen.BuildRibbon(s, "Road", "ExpwyRoadMesh",
             -roadWidth * 0.5f, roadWidth * 0.5f, 0.03f, 0.03f, roadMat, 3.2f, true);
 
@@ -64,15 +66,27 @@ public static class TrackScenes
         TrackGen.BuildRibbon(s, "LaneLineR", "ExpwyLaneR", 2.2f, 2.5f, 0.045f, 0.045f, lineMat, 6f, false);
 
         // 連續混凝土隔音牆 —— 首都高最有辨識度的元素
-        var wallMat = TrackGen.TexMat("ExpwyWall", TrackGen.Tex("TRK_ConcreteWall"), 0.25f, new Vector2(3f, 1f));
+        var wallMat = PbrLib.Available("Concrete016")
+            ? PbrLib.Mat("ExpwyWallPBR", "Concrete016", 0.18f, new Vector2(3f, 1f))
+            : TrackGen.TexMat("ExpwyWall", TrackGen.Tex("TRK_ConcreteWall"), 0.25f, new Vector2(3f, 1f));
         TrackGen.BuildWalls(s, roadWidth * 0.5f + 0.9f, 3.2f, 0.4f, wallMat, 2, "SoundWalls");
 
         // 護欄（牆內側較矮的金屬欄）
-        var railMat = TrackGen.TexMat("ExpwyRail", TrackGen.Tex("TRK_Guardrail"), 0.6f, new Vector2(2.5f, 1f));
+        var railMat = PbrLib.Available("Metal032")
+            ? PbrLib.Mat("ExpwyRailPBR", "Metal032", 0.62f, new Vector2(2.5f, 1f), default, 0.85f)
+            : TrackGen.TexMat("ExpwyRail", TrackGen.Tex("TRK_Guardrail"), 0.6f, new Vector2(2.5f, 1f));
         TrackGen.BuildWalls(s, roadWidth * 0.5f + 0.35f, 0.85f, 0.2f, railMat, 2, "Guardrails");
+
+        // 高架橋體：邊梁與橋墩 —— 首都高是「架在半空中的路」，沒有這個就只是平地
+        BuildViaduct(s, roadWidth);
 
         // 路燈：橘色鈉燈，夜晚是主要光源
         BuildStreetLights(s, roadWidth * 0.5f + 1.4f, 24, new Color(1f, 0.62f, 0.28f), 7f, 30f, 26f, "Expwy");
+
+        // 門架標識（綠底白框，高速公路的辨識符號）與遠景城市天際線
+        BuildGantrySigns(s, roadWidth);
+        BuildCitySkyline(new Vector3(110f, -6f, 0f));
+        BuildRadioTower(new Vector3(320f, -6f, 260f));
 
         var checker = TrackGen.TexMat("Checker", TrackGen.Tex("CheckerTex"), 0.1f, Vector2.one);
         int startIndex = TrackGen.BuildCheckpoints(s, roadWidth, new Vector3(0f, 0f, -60f), checker);
@@ -124,7 +138,9 @@ public static class TrackScenes
         ground.GetComponent<MeshRenderer>().sharedMaterial = groundMat;
         ground.isStatic = true;
 
-        var roadMat = TrackGen.TexMat("CityAsphalt", TrackGen.Tex("TRK_Asphalt"), 0.22f, Vector2.one);
+        var roadMat = PbrLib.Available("Asphalt025C")
+            ? PbrLib.Mat("CityAsphaltPBR", "Asphalt025C", 0.24f, Vector2.one)
+            : TrackGen.TexMat("CityAsphalt", TrackGen.Tex("TRK_Asphalt"), 0.22f, Vector2.one);
         TrackGen.BuildRibbon(s, "Road", "CityRoadMesh",
             -roadWidth * 0.5f, roadWidth * 0.5f, 0.03f, 0.03f, roadMat, 3.2f, true);
 
@@ -134,7 +150,9 @@ public static class TrackScenes
         TrackGen.BuildRibbon(s, "CenterR", "CityCenterR", 0.2f, 0.5f, 0.045f, 0.045f, yellowMat, 6f, false);
 
         // 人行道（比路面高一階，撞到會彈起來）
-        var walkMat = TrackGen.ColorMat("Sidewalk", new Color(0.55f, 0.54f, 0.52f), 0.1f);
+        var walkMat = PbrLib.Available("PavingStones128")
+            ? PbrLib.Mat("SidewalkPBR", "PavingStones128", 0.12f, Vector2.one)
+            : TrackGen.ColorMat("Sidewalk", new Color(0.55f, 0.54f, 0.52f), 0.1f);
         TrackGen.BuildRibbon(s, "SidewalkL", "CitySidewalkL",
             -roadWidth * 0.5f - 3.5f, -roadWidth * 0.5f, 0.22f, 0.22f, walkMat, 4f, true);
         TrackGen.BuildRibbon(s, "SidewalkR", "CitySidewalkR",
@@ -147,6 +165,7 @@ public static class TrackScenes
         BuildCityBuildings(s, roadWidth, startIndex);
         BuildLandmarkTower(new Vector3(250f, 0f, 60f));
         BuildStreetLights(s, roadWidth * 0.5f + 2.2f, 20, new Color(1f, 0.92f, 0.75f), 8f, 28f, 30f, "City");
+        BuildCrosswalks(s, roadWidth, startIndex);
 
         var cars = TrackGen.BuildPlayerCars(s, startIndex);
         var npcs = TrackGen.BuildNPCs(s, startIndex, racerCount: 3, trafficCount: 5);
@@ -159,6 +178,255 @@ public static class TrackScenes
         EditorSceneManager.SaveScene(scene, TrackGen.ScenesDir + "/CityStreet.unity");
         AssetDatabase.SaveAssets();
         Debug.Log("[TrackScenes] CityStreet 完成");
+    }
+
+    // ==================== 首都高結構 ====================
+
+    /// 高架橋體：路緣下的邊梁 + 每隔一段的橋墩。首都高是「架在半空的路」。
+    static void BuildViaduct(List<Vector3> s, float roadWidth)
+    {
+        var root = new GameObject("Viaduct");
+        root.isStatic = true;
+        var concreteMat = PbrLib.Available("Concrete016")
+            ? PbrLib.Mat("ViaductPBR", "Concrete016", 0.14f, new Vector2(2f, 1f))
+            : TrackGen.ColorMat("Viaduct", new Color(0.42f, 0.42f, 0.44f), 0.15f);
+
+        int n = s.Count;
+
+        // 邊梁：沿路兩側、掛在路面下方的深梁（開車時從護欄外看到的就是它）
+        for (int i = 0; i < n; i += 2)
+        {
+            Vector3 a = s[i];
+            Vector3 b = s[(i + 2) % n];
+            Vector3 dir = (b - a).normalized;
+            Vector3 right = Vector3.Cross(Vector3.up, dir).normalized;
+            float len = Vector3.Distance(a, b);
+
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var girder = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                girder.name = "Girder";
+                Object.DestroyImmediate(girder.GetComponent<Collider>());   // 純視覺，碰撞交給護欄
+                girder.transform.SetParent(root.transform);
+                girder.transform.position = (a + b) * 0.5f + right * side * (roadWidth * 0.5f + 0.55f)
+                                            + Vector3.up * -0.85f;
+                girder.transform.rotation = Quaternion.LookRotation(dir);
+                girder.transform.localScale = new Vector3(0.5f, 1.7f, len + 0.5f);
+                girder.GetComponent<MeshRenderer>().sharedMaterial = concreteMat;
+                girder.isStatic = true;
+            }
+        }
+
+        // 橋墩：T 型 —— 柱身 + 橫樑，接到下方地面（地面在 y=-6）
+        for (int i = 0; i < n; i += 12)
+        {
+            Vector3 p = s[i];
+            var pier = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            pier.name = "Pier";
+            pier.transform.SetParent(root.transform);
+            pier.transform.position = new Vector3(p.x, -3.6f, p.z);
+            pier.transform.rotation = Quaternion.LookRotation(TrackGen.Tangent(s, i));
+            pier.transform.localScale = new Vector3(2.4f, 5.6f, 1.6f);
+            pier.GetComponent<MeshRenderer>().sharedMaterial = concreteMat;
+            pier.isStatic = true;
+
+            var cap = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cap.name = "PierCap";
+            Object.DestroyImmediate(cap.GetComponent<Collider>());
+            cap.transform.SetParent(root.transform);
+            cap.transform.position = new Vector3(p.x, -1.2f, p.z);
+            cap.transform.rotation = pier.transform.rotation;
+            cap.transform.localScale = new Vector3(roadWidth * 0.85f, 1.1f, 1.9f);
+            cap.GetComponent<MeshRenderer>().sharedMaterial = concreteMat;
+            cap.isStatic = true;
+        }
+    }
+
+    /// 門架標識：跨越路面的桁架 + 綠底白框標識板（夜晚微發光）
+    static void BuildGantrySigns(List<Vector3> s, float roadWidth)
+    {
+        var root = new GameObject("GantrySigns");
+        root.isStatic = true;
+
+        var poleMat = TrackGen.ColorMat("GantryPole", new Color(0.35f, 0.37f, 0.38f), 0.45f);
+        var signMat = TrackGen.ColorMat("GantrySign", new Color(0.02f, 0.32f, 0.16f), 0.3f,
+                                        new Color(0.02f, 0.30f, 0.14f) * 0.9f);
+        var trimMat = TrackGen.ColorMat("GantryTrim", new Color(0.92f, 0.94f, 0.92f), 0.3f,
+                                        new Color(0.85f, 0.88f, 0.85f) * 0.7f);
+
+        int n = s.Count;
+        int count = 3;
+        for (int k = 0; k < count; k++)
+        {
+            int idx = (k * n / count + n / 7) % n;
+            Vector3 p = s[idx];
+            Vector3 tan = TrackGen.Tangent(s, idx);
+            Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+            Quaternion rot = Quaternion.LookRotation(tan);
+            float half = roadWidth * 0.5f + 1.2f;
+            const float clearH = 6.2f;
+
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var post = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                post.name = "GantryPost";
+                post.transform.SetParent(root.transform);
+                post.transform.position = p + right * side * half + Vector3.up * (clearH * 0.5f);
+                post.transform.localScale = new Vector3(0.42f, clearH * 0.5f, 0.42f);
+                Object.DestroyImmediate(post.GetComponent<Collider>());
+                var box = post.AddComponent<BoxCollider>();   // Cylinder 的 CapsuleCollider 是圓頂，換方箱
+                box.size = new Vector3(1f, 2f, 1f);
+                post.GetComponent<MeshRenderer>().sharedMaterial = poleMat;
+                post.isStatic = true;
+            }
+
+            var beam = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            beam.name = "GantryBeam";
+            Object.DestroyImmediate(beam.GetComponent<Collider>());
+            beam.transform.SetParent(root.transform);
+            beam.transform.position = p + Vector3.up * clearH;
+            beam.transform.rotation = rot;
+            beam.transform.localScale = new Vector3(half * 2f + 0.8f, 0.55f, 0.55f);
+            // Cube 的 X 軸要對齊 right → 用 LookRotation(tan) 後 X 就是橫向，直接放大 X
+            beam.GetComponent<MeshRenderer>().sharedMaterial = poleMat;
+            beam.isStatic = true;
+
+            // 標識板：綠底 + 白框 + 三條白槓（示意文字行）
+            var panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            panel.name = "SignPanel";
+            Object.DestroyImmediate(panel.GetComponent<Collider>());
+            panel.transform.SetParent(root.transform);
+            panel.transform.position = p + Vector3.up * (clearH - 1.55f) + right * (roadWidth * 0.12f);
+            panel.transform.rotation = rot;
+            panel.transform.localScale = new Vector3(5.6f, 2.4f, 0.12f);
+            panel.GetComponent<MeshRenderer>().sharedMaterial = signMat;
+            panel.isStatic = true;
+
+            var frame = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            frame.name = "SignFrame";
+            Object.DestroyImmediate(frame.GetComponent<Collider>());
+            frame.transform.SetParent(root.transform);
+            frame.transform.SetPositionAndRotation(panel.transform.position - tan * 0.02f, rot);
+            frame.transform.localScale = new Vector3(5.85f, 2.65f, 0.08f);
+            frame.GetComponent<MeshRenderer>().sharedMaterial = trimMat;
+            frame.isStatic = true;
+
+            for (int line = 0; line < 2; line++)
+            {
+                var bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                bar.name = "SignText";
+                Object.DestroyImmediate(bar.GetComponent<Collider>());
+                bar.transform.SetParent(root.transform);
+                bar.transform.SetPositionAndRotation(
+                    panel.transform.position + tan * 0.09f + Vector3.up * (0.45f - line * 0.8f)
+                    - right * 0.5f, rot);
+                bar.transform.localScale = new Vector3(line == 0 ? 3.4f : 2.2f, 0.34f, 0.05f);
+                bar.GetComponent<MeshRenderer>().sharedMaterial = trimMat;
+                bar.isStatic = true;
+            }
+        }
+    }
+
+    /// 遠景城市天際線：一圈發光窗戶的高樓剪影（在高架外圍、霧的邊緣）
+    static void BuildCitySkyline(Vector3 center)
+    {
+        var root = new GameObject("CitySkyline");
+        root.isStatic = true;
+        var rnd = new System.Random(1123);
+
+        var mats = new[]
+        {
+            TrackGen.ColorMat("SkylineA", new Color(0.10f, 0.11f, 0.14f), 0.6f, new Color(0.14f, 0.13f, 0.09f) * 1.6f),
+            TrackGen.ColorMat("SkylineB", new Color(0.09f, 0.10f, 0.13f), 0.6f, new Color(0.08f, 0.11f, 0.15f) * 1.6f),
+            TrackGen.ColorMat("SkylineC", new Color(0.11f, 0.11f, 0.13f), 0.6f, new Color(0.13f, 0.09f, 0.06f) * 1.4f),
+        };
+
+        for (int i = 0; i < 46; i++)
+        {
+            float ang = (float)rnd.NextDouble() * Mathf.PI * 2f;
+            float radius = 260f + (float)rnd.NextDouble() * 260f;
+            float w = 18f + (float)rnd.NextDouble() * 26f;
+            float h = 35f + (float)rnd.NextDouble() * 110f;
+
+            var b = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            b.name = "SkylineTower";
+            Object.DestroyImmediate(b.GetComponent<Collider>());   // 遠景，撞不到
+            b.transform.SetParent(root.transform);
+            b.transform.position = center + new Vector3(Mathf.Cos(ang) * radius, h * 0.5f, Mathf.Sin(ang) * radius);
+            b.transform.rotation = Quaternion.Euler(0f, (float)rnd.NextDouble() * 90f, 0f);
+            b.transform.localScale = new Vector3(w, h, w * (0.7f + (float)rnd.NextDouble() * 0.6f));
+            b.GetComponent<MeshRenderer>().sharedMaterial = mats[rnd.Next(mats.Length)];
+            b.isStatic = true;
+        }
+    }
+
+    /// 紅白電波塔剪影（致敬東京鐵塔，分段收束不做精確重製）
+    static void BuildRadioTower(Vector3 basePos)
+    {
+        var root = new GameObject("RadioTower");
+        root.isStatic = true;
+        var red = TrackGen.ColorMat("TowerRed", new Color(0.72f, 0.18f, 0.08f), 0.3f,
+                                    new Color(0.55f, 0.12f, 0.05f) * 1.2f);
+        var white = TrackGen.ColorMat("TowerWhite", new Color(0.92f, 0.92f, 0.90f), 0.3f,
+                                      new Color(0.6f, 0.6f, 0.58f) * 0.8f);
+
+        // 五段交錯紅白、往上收窄的塔身
+        float y = 0f;
+        for (int i = 0; i < 5; i++)
+        {
+            float segH = 26f - i * 2.5f;
+            float w = 34f - i * 6.5f;
+            var seg = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            seg.name = "TowerSeg" + i;
+            Object.DestroyImmediate(seg.GetComponent<Collider>());
+            seg.transform.SetParent(root.transform);
+            seg.transform.position = basePos + Vector3.up * (y + segH * 0.5f);
+            seg.transform.localScale = new Vector3(w, segH * 0.5f, w);
+            seg.GetComponent<MeshRenderer>().sharedMaterial = i % 2 == 0 ? red : white;
+            seg.isStatic = true;
+            y += segH;
+        }
+
+        // 天線
+        var spire = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        Object.DestroyImmediate(spire.GetComponent<Collider>());
+        spire.transform.SetParent(root.transform);
+        spire.transform.position = basePos + Vector3.up * (y + 15f);
+        spire.transform.localScale = new Vector3(1.6f, 15f, 1.6f);
+        spire.GetComponent<MeshRenderer>().sharedMaterial = red;
+        spire.isStatic = true;
+    }
+
+    /// 斑馬線：路口的白色條紋（貼在路面上方一點點）
+    static void BuildCrosswalks(List<Vector3> s, float roadWidth, int startIndex)
+    {
+        var root = new GameObject("Crosswalks");
+        root.isStatic = true;
+        var white = TrackGen.ColorMat("CrosswalkPaint", new Color(0.88f, 0.88f, 0.86f), 0.15f);
+
+        int n = s.Count;
+        for (int k = 1; k < 4; k++)   // 起點線那格已有黑白格，跳過
+        {
+            int idx = (startIndex + k * n / 4) % n;
+            Vector3 p = s[idx];
+            Vector3 tan = TrackGen.Tangent(s, idx);
+            Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+            Quaternion rot = Quaternion.LookRotation(tan);
+
+            int stripes = Mathf.FloorToInt(roadWidth / 1.5f);
+            for (int i = 0; i < stripes; i++)
+            {
+                float lateral = -roadWidth * 0.5f + 0.9f + i * 1.5f;
+                var stripe = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                stripe.name = "Stripe";
+                Object.DestroyImmediate(stripe.GetComponent<Collider>());
+                stripe.transform.SetParent(root.transform);
+                stripe.transform.SetPositionAndRotation(p + right * lateral + Vector3.up * 0.05f, rot);
+                stripe.transform.localScale = new Vector3(0.7f, 0.02f, 3.4f);
+                stripe.GetComponent<MeshRenderer>().sharedMaterial = white;
+                stripe.isStatic = true;
+            }
+        }
     }
 
     // ==================== 裝飾 ====================
@@ -399,7 +667,8 @@ public static class TrackScenes
 
     static void EnsureAudio()
     {
-        if (AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_loop.wav") == null)
+        // engine_low 是新一批（多轉速分層）的代表 —— 用它判斷才會在升級後重生音效
+        if (AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_low.wav") == null)
             AudioSynth.GenerateAll();
     }
 

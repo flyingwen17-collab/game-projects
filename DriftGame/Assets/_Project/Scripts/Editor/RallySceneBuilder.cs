@@ -24,7 +24,7 @@ public static class RallySceneBuilder
         Directory.CreateDirectory(MaterialsDir);
         AssetDatabase.Refresh();
 
-        if (AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_loop.wav") == null)
+        if (AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_low.wav") == null)
             AudioSynth.GenerateAll();
 
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -78,7 +78,9 @@ public static class RallySceneBuilder
     static void BuildEnvironment()
     {
         // Plane 預設 10 單位、縮放 140 → 1400m 見方；貼圖每 4m 重複一次
-        var grassMat = TexMat("Grass", GrassTexture(), 350f, 0.04f);
+        var grassMat = PbrLib.Available("Grass001")
+            ? PbrLib.Mat("GrassPBR", "Grass001", 0.05f, new Vector2(350f, 350f))
+            : TexMat("Grass", GrassTexture(), 350f, 0.04f);
         var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.name = "Grass";
         ground.transform.position = new Vector3(75f, 0f, 0f);
@@ -251,7 +253,9 @@ public static class RallySceneBuilder
 
         var road = new GameObject("Road");
         road.AddComponent<MeshFilter>().sharedMesh = mesh;
-        road.AddComponent<MeshRenderer>().sharedMaterial = TexMat("Asphalt", AsphaltTexture(), 1f, 0.22f);
+        road.AddComponent<MeshRenderer>().sharedMaterial = PbrLib.Available("Asphalt025C")
+            ? PbrLib.Mat("RallyAsphaltPBR", "Asphalt025C", 0.20f, Vector2.one)
+            : TexMat("Asphalt", AsphaltTexture(), 1f, 0.22f);
         road.AddComponent<MeshCollider>().sharedMesh = mesh;
         road.isStatic = true;
 
@@ -348,6 +352,8 @@ public static class RallySceneBuilder
                 wall.transform.position = mid + Vector3.up * 0.55f;
                 wall.transform.rotation = Quaternion.LookRotation(dir);
                 wall.transform.localScale = new Vector3(0.35f, 1.1f, len + 0.5f);
+                // 低摩擦：擦護欄滑開減速，而不是被釘在牆上
+                wall.GetComponent<Collider>().sharedMaterial = CarFactory.PhysMat("WallPhys", 0.04f, 0.18f);
                 wall.isStatic = true;
                 if (useKit)
                 {
@@ -577,12 +583,19 @@ public static class RallySceneBuilder
         src.volume = 0.3f;
         src.spatialBlend = 0f;
 
+        // 比賽總監（起跑燈、計圈、名次）
+        var directorGo = new GameObject("RaceDirector");
+        var director = directorGo.AddComponent<RaceDirector>();
+        director.beepCountClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/beep_count.wav");
+        director.beepGoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/beep_go.wav");
+
         // 遊戲管理
         var gmGo = new GameObject("GameManager");
         var gm = gmGo.AddComponent<GameManager>();
         gm.cars = cars;
         gm.cameraFollow = follow;
         gm.npcs = npcs;
+        gm.director = director;
     }
 
     // ---------------- 後製 ----------------

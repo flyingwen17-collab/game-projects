@@ -3,7 +3,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-/// 遊戲流程：選車畫面、HUD（時速/圈時/甩尾分數與連段）、完圈結算、成績存檔。
+/// 遊戲流程：選車與賽事設定、紅燈倒數、HUD（時速/圈數/名次/甩尾分數）、完賽結算、成績存檔。
 /// UI 全部在執行時用程式建立，場景端只需指定車輛與攝影機。
 public class GameManager : MonoBehaviour
 {
@@ -14,11 +14,9 @@ public class GameManager : MonoBehaviour
 
     [Header("NPC")]
     public GameObject[] npcs = new GameObject[0];
-    [Tooltip("開場是否啟用 NPC")]
-    public bool npcsEnabled = true;
 
-    [Header("結算")]
-    public float resultAutoHideSeconds = 7f;
+    [Header("比賽")]
+    public RaceDirector director;
 
     CarController current;
     int currentIndex = -1;
@@ -30,6 +28,20 @@ public class GameManager : MonoBehaviour
     GameObject selectPanel;
     Text speedText, timeText, lastText, bestText, driftText, hintText;
     Text scoreText, comboText, totalText, flashText, gearText, rpmText;
+    Text lapText, posText;
+
+    // 起跑燈
+    GameObject lightsPanel;
+    Image[] lightDots;
+    Text countdownText;
+    float goFadeTimer;
+
+    // 賽事設定按鈕（高亮顯示目前選擇）
+    readonly int[] lapChoices = { 1, 3, 5 };
+    readonly int[] racerChoices = { 0, 3, 5 };
+    Image[] lapBtns, racerBtns;
+    Image trafficBtn;
+    Text trafficBtnLabel;
 
     GameObject resultPanel;
     Text resultTitle, resultBody;
@@ -40,18 +52,31 @@ public class GameManager : MonoBehaviour
     {
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         foreach (var c in cars) if (c != null) c.enabled = false;
-        SetNpcsEnabled(npcsEnabled);
+        if (director == null) director = FindAnyObjectByType<RaceDirector>();
         BuildUI();
         ShowSelect(true);
 
         if (RaceTimer.Instance != null)
             RaceTimer.Instance.OnLapCompleted += HandleLapCompleted;
+
+        if (director != null)
+        {
+            director.OnCountdown += HandleCountdown;
+            director.OnGreen += HandleGreen;
+            director.OnPlayerFinished += HandlePlayerFinished;
+        }
     }
 
     void OnDestroy()
     {
         if (RaceTimer.Instance != null)
             RaceTimer.Instance.OnLapCompleted -= HandleLapCompleted;
+        if (director != null)
+        {
+            director.OnCountdown -= HandleCountdown;
+            director.OnGreen -= HandleGreen;
+            director.OnPlayerFinished -= HandlePlayerFinished;
+        }
         UnsubscribeScoring();
     }
 
@@ -85,6 +110,13 @@ public class GameManager : MonoBehaviour
         rpmText.color = new Color(1f, 1f, 1f, 0.8f);
         rpmText.text = "";
 
+        // 圈數與名次（左上）
+        lapText = MakeText("Lap", new Vector2(0f, 1f), new Vector2(40f, -46f), 52, TextAnchor.UpperLeft);
+        lapText.text = "";
+        posText = MakeText("Pos", new Vector2(0f, 1f), new Vector2(40f, -112f), 64, TextAnchor.UpperLeft);
+        posText.color = new Color(1f, 0.85f, 0.3f);
+        posText.text = "";
+
         // 圈時（上中）
         timeText = MakeText("Time", new Vector2(0.5f, 1f), new Vector2(0f, -50f), 44, TextAnchor.UpperCenter);
         lastText = MakeText("Last", new Vector2(0.5f, 1f), new Vector2(0f, -100f), 26, TextAnchor.UpperCenter);
@@ -117,10 +149,11 @@ public class GameManager : MonoBehaviour
         // 操作提示（左下）
         hintText = MakeText("Hint", new Vector2(0f, 0f), new Vector2(30f, 30f), 22, TextAnchor.LowerLeft);
         hintText.text = "WASD 駕駛（停住後長按 S 進倒檔）   Space 手煞車   Q 升檔 / E 降檔   T 自排手排\n"
-                      + "L 車燈   N 時段（正午→黃昏→夜晚）   M NPC 上場/離場   R 重置   1/2/3 換車   Esc 選單\n"
-                      + "F1 拉力賽道   F2 日本高速公路   F3 台北街道";
+                      + "L 車燈   N 時段（正午→黃昏→夜晚）   M 車流開關   R 重置   Esc 選單\n"
+                      + "F1 山道   F2 日本高速公路   F3 台北街道";
         hintText.color = new Color(1f, 1f, 1f, 0.65f);
 
+        BuildStartLights();
         BuildSelectPanel();
         BuildResultPanel();
     }
@@ -146,6 +179,38 @@ public class GameManager : MonoBehaviour
         return t;
     }
 
+    /// F1 式起跑燈：三顆紅燈逐顆亮 → 全滅（=起跑）＋ GO! 字樣
+    void BuildStartLights()
+    {
+        lightsPanel = new GameObject("StartLights");
+        lightsPanel.transform.SetParent(canvas.transform, false);
+        var bg = lightsPanel.AddComponent<Image>();
+        bg.color = new Color(0.03f, 0.03f, 0.04f, 0.85f);
+        var rt = bg.rectTransform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 1f);
+        rt.sizeDelta = new Vector2(340f, 120f);
+        rt.anchoredPosition = new Vector2(0f, -190f);
+
+        lightDots = new Image[3];
+        for (int i = 0; i < 3; i++)
+        {
+            var dot = new GameObject("Dot" + i);
+            dot.transform.SetParent(lightsPanel.transform, false);
+            var img = dot.AddComponent<Image>();
+            img.color = new Color(0.25f, 0.05f, 0.05f);   // 熄滅的暗紅
+            var drt = img.rectTransform;
+            drt.sizeDelta = new Vector2(80f, 80f);
+            drt.anchorMin = drt.anchorMax = drt.pivot = new Vector2(0.5f, 0.5f);
+            drt.anchoredPosition = new Vector2((i - 1) * 105f, 0f);
+            lightDots[i] = img;
+        }
+
+        countdownText = MakeText("Countdown", new Vector2(0.5f, 0.5f), new Vector2(0f, 60f), 150, TextAnchor.MiddleCenter);
+        countdownText.text = "";
+
+        lightsPanel.SetActive(false);
+    }
+
     void BuildSelectPanel()
     {
         selectPanel = new GameObject("SelectPanel");
@@ -157,9 +222,9 @@ public class GameManager : MonoBehaviour
         rt.anchorMax = Vector2.one;
         rt.offsetMin = rt.offsetMax = Vector2.zero;
 
-        var title = MakeText("Title", new Vector2(0.5f, 1f), new Vector2(0f, -180f), 64, TextAnchor.UpperCenter);
+        var title = MakeText("Title", new Vector2(0.5f, 1f), new Vector2(0f, -120f), 60, TextAnchor.UpperCenter);
         title.transform.SetParent(selectPanel.transform, false);
-        title.text = "選擇你的拉力車";
+        title.text = "選擇你的賽車";
 
         Color[] btnColors =
         {
@@ -178,7 +243,7 @@ public class GameManager : MonoBehaviour
             var brt = img.rectTransform;
             brt.sizeDelta = new Vector2(360f, 220f);
             brt.anchorMin = brt.anchorMax = brt.pivot = new Vector2(0.5f, 0.5f);
-            brt.anchoredPosition = new Vector2((i - 1) * 420f, -40f);
+            brt.anchoredPosition = new Vector2((i - 1) * 420f, 40f);
             var btn = btnGo.AddComponent<Button>();
             btn.onClick.AddListener(() => StartRace(idx));
 
@@ -201,6 +266,75 @@ public class GameManager : MonoBehaviour
                 : "尚無紀錄";
             best.color = i == 2 ? new Color(0.35f, 0.3f, 0.1f) : new Color(1f, 0.9f, 0.55f, 0.9f);
         }
+
+        BuildRaceSettings();
+    }
+
+    /// 賽事設定列：圈數 / 對手數 / 車流
+    void BuildRaceSettings()
+    {
+        var rowTitle = MakeText("SetTitle", new Vector2(0.5f, 0.5f), new Vector2(-520f, -180f), 30, TextAnchor.MiddleCenter);
+        rowTitle.transform.SetParent(selectPanel.transform, false);
+        rowTitle.text = "圈數";
+
+        lapBtns = new Image[lapChoices.Length];
+        for (int i = 0; i < lapChoices.Length; i++)
+        {
+            int v = lapChoices[i];
+            lapBtns[i] = MakeSettingButton(v.ToString(), new Vector2(-400f + i * 90f, -180f),
+                () => { RaceDirector.LapsSetting = v; RefreshSettingButtons(); });
+        }
+
+        var rTitle = MakeText("SetTitle2", new Vector2(0.5f, 0.5f), new Vector2(-80f, -180f), 30, TextAnchor.MiddleCenter);
+        rTitle.transform.SetParent(selectPanel.transform, false);
+        rTitle.text = "對手";
+
+        racerBtns = new Image[racerChoices.Length];
+        for (int i = 0; i < racerChoices.Length; i++)
+        {
+            int v = racerChoices[i];
+            racerBtns[i] = MakeSettingButton(v.ToString(), new Vector2(40f + i * 90f, -180f),
+                () => { RaceDirector.RacersSetting = v; RefreshSettingButtons(); });
+        }
+
+        var tTitle = MakeText("SetTitle3", new Vector2(0.5f, 0.5f), new Vector2(330f, -180f), 30, TextAnchor.MiddleCenter);
+        tTitle.transform.SetParent(selectPanel.transform, false);
+        tTitle.text = "車流";
+
+        trafficBtn = MakeSettingButton("開", new Vector2(440f, -180f),
+            () => { RaceDirector.TrafficSetting = !RaceDirector.TrafficSetting; RefreshSettingButtons(); });
+        trafficBtnLabel = trafficBtn.GetComponentInChildren<Text>();
+
+        RefreshSettingButtons();
+    }
+
+    Image MakeSettingButton(string label, Vector2 pos, UnityEngine.Events.UnityAction onClick)
+    {
+        var go = new GameObject("Set_" + label);
+        go.transform.SetParent(selectPanel.transform, false);
+        var img = go.AddComponent<Image>();
+        var rt = img.rectTransform;
+        rt.sizeDelta = new Vector2(78f, 56f);
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        go.AddComponent<Button>().onClick.AddListener(onClick);
+
+        var t = MakeText("L", new Vector2(0.5f, 0.5f), Vector2.zero, 30, TextAnchor.MiddleCenter);
+        t.transform.SetParent(go.transform, false);
+        t.text = label;
+        return img;
+    }
+
+    void RefreshSettingButtons()
+    {
+        var on = new Color(0.95f, 0.65f, 0.12f);
+        var off = new Color(0.2f, 0.2f, 0.24f);
+        for (int i = 0; i < lapBtns.Length; i++)
+            lapBtns[i].color = RaceDirector.LapsSetting == lapChoices[i] ? on : off;
+        for (int i = 0; i < racerBtns.Length; i++)
+            racerBtns[i].color = RaceDirector.RacersSetting == racerChoices[i] ? on : off;
+        trafficBtn.color = RaceDirector.TrafficSetting ? on : off;
+        if (trafficBtnLabel != null) trafficBtnLabel.text = RaceDirector.TrafficSetting ? "開" : "關";
     }
 
     void BuildResultPanel()
@@ -216,7 +350,7 @@ public class GameManager : MonoBehaviour
 
         resultTitle = MakeText("ResultTitle", new Vector2(0.5f, 1f), new Vector2(0f, -46f), 54, TextAnchor.UpperCenter);
         resultTitle.transform.SetParent(resultPanel.transform, false);
-        resultTitle.text = "完成一圈";
+        resultTitle.text = "完賽";
 
         resultBody = MakeText("ResultBody", new Vector2(0.5f, 0.5f), new Vector2(0f, -10f), 32, TextAnchor.MiddleCenter);
         resultBody.transform.SetParent(resultPanel.transform, false);
@@ -224,7 +358,7 @@ public class GameManager : MonoBehaviour
 
         var tip = MakeText("ResultTip", new Vector2(0.5f, 0f), new Vector2(0f, 30f), 22, TextAnchor.LowerCenter);
         tip.transform.SetParent(resultPanel.transform, false);
-        tip.text = "按 Space 關閉";
+        tip.text = "按 Space 關閉　Esc 回選單";
         tip.color = new Color(1f, 1f, 1f, 0.6f);
 
         resultPanel.SetActive(false);
@@ -241,15 +375,6 @@ public class GameManager : MonoBehaviour
         var active = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
         if (active.name == sceneName) return;
         UnityEngine.SceneManagement.SceneManager.LoadScene(sceneName);
-    }
-
-    /// NPC 上場/離場。離場時整台停用（含物理與 AI），不只是關 AI。
-    public void SetNpcsEnabled(bool on)
-    {
-        npcsEnabled = on;
-        if (npcs == null) return;
-        foreach (var go in npcs)
-            if (go != null) go.SetActive(on);
     }
 
     // ---------------- 流程 ----------------
@@ -287,6 +412,15 @@ public class GameManager : MonoBehaviour
         resultPanel.SetActive(false);
         flashText.text = "";
         ShowSelect(false);
+
+        // 比賽總監接手：起跑格 + 紅燈倒數 + 計圈名次
+        if (director != null)
+        {
+            director.BeginRace(current, npcs);
+            lightsPanel.SetActive(true);
+            countdownText.text = "";
+            foreach (var d in lightDots) d.color = new Color(0.25f, 0.05f, 0.05f);
+        }
     }
 
     void UnsubscribeScoring()
@@ -295,6 +429,52 @@ public class GameManager : MonoBehaviour
         currentScoring.OnBanked -= HandleBanked;
         currentScoring.OnCrash -= HandleCrash;
         currentScoring.OnComboUp -= HandleComboUp;
+    }
+
+    // ---------------- 事件 ----------------
+
+    void HandleCountdown(int step)
+    {
+        // step 3→2→1：紅燈逐顆亮
+        int lit = 4 - step;   // 3→1顆、2→2顆、1→3顆
+        for (int i = 0; i < lightDots.Length; i++)
+            lightDots[i].color = i < lit ? new Color(1f, 0.12f, 0.08f) : new Color(0.25f, 0.05f, 0.05f);
+        countdownText.text = step.ToString();
+        countdownText.color = new Color(1f, 0.25f, 0.15f);
+        goFadeTimer = 0f;
+    }
+
+    void HandleGreen()
+    {
+        // 紅燈熄滅 = 起跑
+        foreach (var d in lightDots) d.color = new Color(0.12f, 0.1f, 0.1f);
+        countdownText.text = "GO!";
+        countdownText.color = new Color(0.3f, 1f, 0.35f);
+        goFadeTimer = 1.2f;
+    }
+
+    void HandlePlayerFinished(int position, float totalTime)
+    {
+        float score = currentScoring != null ? currentScoring.TotalScore + currentScoring.PendingScore : 0f;
+        float combo = currentScoring != null ? currentScoring.BestCombo : 0f;
+        float bestLap = RaceTimer.Instance != null ? RaceTimer.Instance.BestLap : -1f;
+
+        SaveSystem.Submit(currentIndex, bestLap, score, combo,
+                          out bool newLap, out bool newScore, out _);
+
+        string carName = currentIndex >= 0 && currentIndex < carNames.Length ? carNames[currentIndex] : "";
+        resultTitle.text = "完賽！　第 " + position + " 名";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(carName + "　" + director.TotalLaps + " 圈");
+        sb.AppendLine("總時間　　" + RaceTimer.Format(totalTime));
+        sb.AppendLine("最速圈　　" + RaceTimer.Format(bestLap) + (newLap ? "　★新紀錄" : ""));
+        sb.AppendLine("甩尾總分　" + Mathf.RoundToInt(score) + (newScore ? "　★新紀錄" : ""));
+        sb.Append("最高連段　x" + combo.ToString("0.0"));
+        resultBody.text = sb.ToString();
+
+        resultPanel.SetActive(true);
+        resultTimer = 0f;   // 完賽結算不自動關
     }
 
     void HandleBanked(float earned)
@@ -321,25 +501,12 @@ public class GameManager : MonoBehaviour
 
     void HandleLapCompleted(float lapTime)
     {
-        float score = currentScoring != null ? currentScoring.TotalScore + currentScoring.PendingScore : 0f;
-        float combo = currentScoring != null ? currentScoring.BestCombo : 0f;
-        float longest = currentScoring != null ? currentScoring.LongestDriftTime : 0f;
-
-        SaveSystem.Submit(currentIndex, lapTime, score, combo,
-                          out bool newLap, out bool newScore, out bool newCombo);
-
-        string carName = currentIndex >= 0 && currentIndex < carNames.Length ? carNames[currentIndex] : "";
-        resultTitle.text = carName + "　完成第 " + (RaceTimer.Instance != null ? RaceTimer.Instance.LapsDone : 1) + " 圈";
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("圈速　　" + RaceTimer.Format(lapTime) + (newLap ? "　★新紀錄" : ""));
-        sb.AppendLine("甩尾總分　" + Mathf.RoundToInt(score) + (newScore ? "　★新紀錄" : ""));
-        sb.AppendLine("最高連段　x" + combo.ToString("0.0") + (newCombo ? "　★新紀錄" : ""));
-        sb.Append("最長甩尾　" + longest.ToString("0.0") + " 秒");
-        resultBody.text = sb.ToString();
-
-        resultPanel.SetActive(true);
-        resultTimer = resultAutoHideSeconds;
+        // 中途圈：短提示就好，別擋畫面；最後一圈由 HandlePlayerFinished 收尾
+        if (director != null && director.CurrentPhase == RaceDirector.Phase.Racing)
+        {
+            Flash("LAP " + director.PlayerLap + "/" + director.TotalLaps + "　" + RaceTimer.Format(lapTime),
+                  new Color(0.6f, 0.9f, 1f));
+        }
     }
 
     // ---------------- 每幀更新 ----------------
@@ -362,11 +529,19 @@ public class GameManager : MonoBehaviour
                 Flash("時段：" + TimeOfDay.Instance.Label, new Color(0.7f, 0.85f, 1f));
             }
 
-            // M 開關 NPC 陪跑
+            // M 開關車流
             if (kb.mKey.wasPressedThisFrame)
             {
-                SetNpcsEnabled(!npcsEnabled);
-                Flash(npcsEnabled ? "NPC 已上場" : "NPC 已離場", new Color(0.75f, 1f, 0.8f));
+                RaceDirector.TrafficSetting = !RaceDirector.TrafficSetting;
+                foreach (var go in npcs)
+                {
+                    if (go == null) continue;
+                    var ai = go.GetComponent<NPCDriver>();
+                    if (ai != null && ai.style == NPCDriver.Style.Traffic)
+                        go.SetActive(RaceDirector.TrafficSetting);
+                }
+                RefreshSettingButtons();
+                Flash(RaceDirector.TrafficSetting ? "車流已上路" : "車流已離場", new Color(0.75f, 1f, 0.8f));
             }
 
             // F1/F2/F3 切換賽道
@@ -375,7 +550,18 @@ public class GameManager : MonoBehaviour
             if (kb.f3Key.wasPressedThisFrame) LoadTrack("CityStreet");
         }
 
-        if (resultPanel.activeSelf)
+        // 起跑燈：GO! 顯示一秒後整組淡出
+        if (goFadeTimer > 0f)
+        {
+            goFadeTimer -= Time.deltaTime;
+            if (goFadeTimer <= 0f)
+            {
+                lightsPanel.SetActive(false);
+                countdownText.text = "";
+            }
+        }
+
+        if (resultPanel.activeSelf && resultTimer > 0f)
         {
             resultTimer -= Time.deltaTime;
             if (resultTimer <= 0f) resultPanel.SetActive(false);
@@ -407,6 +593,19 @@ public class GameManager : MonoBehaviour
             timeText.text = "TIME  " + RaceTimer.Format(timer.Running ? timer.CurrentLap : -1f);
             lastText.text = "LAST  " + RaceTimer.Format(timer.LastLap);
             bestText.text = "BEST  " + RaceTimer.Format(timer.BestLap);
+        }
+
+        // 圈數與名次
+        if (director != null &&
+            (director.CurrentPhase == RaceDirector.Phase.Racing || director.CurrentPhase == RaceDirector.Phase.Finished))
+        {
+            lapText.text = "LAP " + director.PlayerLap + "/" + director.TotalLaps;
+            posText.text = director.PlayerPosition + " / " + director.EntryCount;
+        }
+        else
+        {
+            lapText.text = "";
+            posText.text = "";
         }
 
         UpdateScoreHud();

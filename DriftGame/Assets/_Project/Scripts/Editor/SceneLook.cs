@@ -130,7 +130,8 @@ public static class SceneLook
         // 用 LDR 時代的 1.0+ 曝光會整片過曝成白色。
         var skyNoon = BuildPanoSky("Skybox_Noon", "SKY_Noon", 0.72f, 140f);
         var skyDusk = BuildPanoSky("Skybox_GoldenHour", "SKY_Dusk", 0.68f, 205f);
-        var skyNight = BuildPanoSky("Skybox_Night", "SKY_Night", 1.4f, 60f);
+        // 夜空曝光壓低：月光 HDRI 開到 1.4 亮得像白天（build 實測），夜晚要暗才是夜晚
+        var skyNight = BuildPanoSky("Skybox_Night", "SKY_Night", 0.72f, 60f);
 
         RenderSettings.skybox = skyDusk != null ? skyDusk : skyNoon;
 

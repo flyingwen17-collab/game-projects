@@ -66,6 +66,22 @@ public class DriveSelfTest : MonoBehaviour
         }
         if (car == null) car = FindAnyObjectByType<CarController>();
 
+        // 自測不等紅燈：跳過倒數，否則前 4 秒的輸入全被鎖住、數據全錯
+        if (RaceDirector.Instance != null)
+        {
+            RaceDirector.Instance.SkipCountdown();
+
+            // 起跑格會把對手排在測試車正前方 7m —— 全油門直線測試需要淨空路段，
+            // 把測試車移到起跑線前方一小段（對手在後方，起跑後只會越拉越遠）
+            var path = TrackPath.Instance;
+            if (car != null && path != null && path.Count > 0)
+            {
+                int idx = (path.NearestIndex(car.transform.position) + 14) % path.Count;
+                car.TeleportTo(path.At(idx) + Vector3.up * 0.5f,
+                               Quaternion.LookRotation(path.Tangent(idx)));
+            }
+        }
+
         if (car == null) { Finish("找不到任何 CarController"); return; }
 
         car.enabled = true;

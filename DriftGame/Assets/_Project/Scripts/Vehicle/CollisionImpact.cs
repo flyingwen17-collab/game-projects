@@ -8,6 +8,8 @@ public class CollisionImpact : MonoBehaviour
     [Header("素材")]
     public Texture2D sparkTexture;
     public AudioClip impactClip;
+    [Tooltip("火花材質（CarFactory 指定的資產；留空才退回執行期生成）")]
+    public Material sparkMaterial;
 
     [Header("門檻（衝量，N·s）")]
     public float minImpulse = 400f;      // 低於此值只算擦碰，不觸發
@@ -78,17 +80,25 @@ public class CollisionImpact : MonoBehaviour
         renderer.velocityScale = 0.06f;
         renderer.lengthScale = 2.2f;
 
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
-        if (sparkTexture != null) mat.SetTexture("_BaseMap", sparkTexture);
-        mat.SetColor("_BaseColor", Color.white);
-        // 相加混合，火花才會發亮並吃到 Bloom
-        mat.SetFloat("_Surface", 1f);
-        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
-        mat.SetInt("_ZWrite", 0);
-        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-        renderer.material = mat;
+        // 材質優先用資產（打包後 shader 才不會被剝除變洋紅）；沒指定才退回執行期生成
+        if (sparkMaterial != null)
+        {
+            renderer.sharedMaterial = sparkMaterial;
+        }
+        else
+        {
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+            if (sparkTexture != null) mat.SetTexture("_BaseMap", sparkTexture);
+            mat.SetColor("_BaseColor", Color.white);
+            // 相加混合，火花才會發亮並吃到 Bloom
+            mat.SetFloat("_Surface", 1f);
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+            mat.SetInt("_ZWrite", 0);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            renderer.material = mat;
+        }
 
         return ps;
     }
@@ -129,7 +139,10 @@ public class CollisionImpact : MonoBehaviour
             Vector3.Reflect(-collision.relativeVelocity.normalized, contact.normal));
         sparks.Emit(Mathf.RoundToInt(Mathf.Lerp(8f, sparkBurstMax, severity)));
 
-        if (camFollow != null) camFollow.Shake(Mathf.Lerp(0.12f, maxCameraShake, severity));
+        // 螢幕震動只屬於「玩家自己」的撞擊 —— NPC 在遠處互撞或磨牆不震玩家的螢幕。
+        // （每台車都掛這個元件，不加這個判斷會全場亂震。）
+        if (camFollow != null && camFollow.target == transform)
+            camFollow.Shake(Mathf.Lerp(0.12f, maxCameraShake, severity));
 
         if (impactClip != null && cooldown <= 0f)
         {

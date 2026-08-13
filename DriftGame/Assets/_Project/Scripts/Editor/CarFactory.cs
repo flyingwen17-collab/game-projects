@@ -68,7 +68,8 @@ public static class CarFactory
         rb.mass = spec.massKg;
 
         // ---- Kenney 車體模型（視覺主體）----
-        string bodyModel = visualOverride ?? (style == Style.WRX ? "race"
+        // WRX 用一般四門房車（"race" 是方程式賽車，開在公路上完全出戲）
+        string bodyModel = visualOverride ?? (style == Style.WRX ? "sedan"
                           : style == Style.FIT ? "hatchback-sports"
                           : "sedan-sports");
         var kitBody = KenneyLib.Place("cars", bodyModel, car.transform,
@@ -88,6 +89,10 @@ public static class CarFactory
             kitBody.transform.position += Vector3.up *
                 (car.transform.position.y - wheelRadius * 0.55f - b.min.y);
             KenneyLib.CenterXZ(kitBody, car.transform.position);
+
+            // 金屬清漆車漆：真車的漆面是有反射的。只換車身模型的材質複本，
+            // 不動 Kenney 共用材質（否則整座城市的建築會跟著變亮面）。
+            ApplyCarPaint(kitBody);
         }
 
         // ---- 碰撞體（方塊）：有模型時只留碰撞、不畫 ----
@@ -111,6 +116,12 @@ public static class CarFactory
                 break;
         }
         var cabin = Part(car, "Cabin", cabinPos, cabinSize, glassMat, true);
+
+        // 車殼物理材質：低摩擦 + 一點彈性 —— 擦牆會滑開、對撞會分離，
+        // 而不是像預設材質那樣「黏」在障礙物上原地卡死。
+        var bodyPhys = PhysMat("CarBodyPhys", 0.22f, 0.12f);
+        body.GetComponent<Collider>().sharedMaterial = bodyPhys;
+        cabin.GetComponent<Collider>().sharedMaterial = bodyPhys;
 
         if (kit)
         {
@@ -262,9 +273,23 @@ public static class CarFactory
         for (int i = 0; i < 4; i++)
             visuals.wheels[i] = new CarVisuals.WheelPair { collider = colliders[i], mesh = meshes[i] };
 
+        // FX 材質全部做成資產：執行期 new Material(Shader.Find) 在打包後
+        // 會因 shader 被剝除而變成洋紅色（胎痕變「紅線」的元凶）。
+        var smokeTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Smoke.png");
+        var sparkTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Spark.png");
+        var flameTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Flame.png");
+        var skidMat = FxMat("FxSkidMark", "Universal Render Pipeline/Unlit",
+                            null, new Color(0.035f, 0.035f, 0.04f, 0.78f), false);
+        var smokeMat = FxMat("FxTireSmoke", "Universal Render Pipeline/Particles/Unlit",
+                             smokeTex, Color.white, false);
+        var sparkMat = FxMat("FxSpark", "Universal Render Pipeline/Particles/Unlit",
+                             sparkTex, Color.white, true);
+        var flameMat = FxMat("FxFlame", "Universal Render Pipeline/Particles/Unlit",
+                             flameTex, Color.white, true);
+
         var effects = car.AddComponent<TireEffects>();
-        effects.allWheels = colliders;
-        effects.smokeTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Smoke.png");
+        effects.skidMaterial = skidMat;
+        effects.smokeMaterial = smokeMat;
 
         var lights = car.AddComponent<CarLights>();
         lights.headlightRenderers = new[] { headL.GetComponent<Renderer>(), headR.GetComponent<Renderer>() };
@@ -273,14 +298,23 @@ public static class CarFactory
         lights.headlightLocalRight = headR.transform.localPosition + new Vector3(0f, 0f, 0.1f);
 
         var impact = car.AddComponent<CollisionImpact>();
-        impact.sparkTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Spark.png");
+        impact.sparkTexture = sparkTex;
+        impact.sparkMaterial = sparkMat;
         impact.impactClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/impact.wav");
 
         var audio = car.AddComponent<EngineAudio>();
-        audio.engineClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_loop.wav");
+        audio.engineLowClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_low.wav");
+        audio.engineMidClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_mid.wav");
+        audio.engineHighClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/engine_high.wav");
         audio.skidClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/skid_loop.wav");
         audio.brakeClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/brake_squeal.wav");
-        audio.backfireClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire.wav");
+        audio.gearShiftClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/gearshift.wav");
+        audio.backfireClips = new[]
+        {
+            AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire.wav"),
+            AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire_2.wav"),
+            AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/backfire_3.wav"),
+        };
         audio.exhaustFlame = BuildExhaustFlame(car, -halfL - 0.05f);
 
         // 組裝完才套目標朝向（見開頭註解）
@@ -338,20 +372,38 @@ public static class CarFactory
         col.color = grad;
 
         var renderer = ps.GetComponent<ParticleSystemRenderer>();
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
-        var flameTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Flame.png");
-        if (flameTex != null) mat.SetTexture("_BaseMap", flameTex);
-        mat.SetColor("_BaseColor", Color.white);
-        // 相加混合 → 會發光並吃到 Bloom
+        renderer.sharedMaterial = FxMat("FxFlame", "Universal Render Pipeline/Particles/Unlit",
+            AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Textures/FX_Flame.png"),
+            Color.white, true);
+
+        return ps;
+    }
+
+    /// 特效材質資產：透明（alpha 混合）或相加混合（additive，會發光吃 Bloom）。
+    /// 存成 .mat 才會被打包收錄 shader，執行期生成的材質在 build 裡會變洋紅。
+    static Material FxMat(string name, string shaderName, Texture2D tex, Color color, bool additive)
+    {
+        string path = MaterialsDir + "/" + name + ".mat";
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (mat == null)
+        {
+            mat = new Material(Shader.Find(shaderName));
+            System.IO.Directory.CreateDirectory(MaterialsDir);
+            AssetDatabase.CreateAsset(mat, path);
+        }
+        mat.shader = Shader.Find(shaderName);
+        if (tex != null) mat.SetTexture("_BaseMap", tex);
+        mat.SetColor("_BaseColor", color);
         mat.SetFloat("_Surface", 1f);
+        mat.SetOverrideTag("RenderType", "Transparent");
         mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+        mat.SetInt("_DstBlend", additive ? (int)UnityEngine.Rendering.BlendMode.One
+                                         : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
         mat.SetInt("_ZWrite", 0);
         mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
         mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-        renderer.material = mat;
-
-        return ps;
+        UnityEditor.EditorUtility.SetDirty(mat);
+        return mat;
     }
 
     static GameObject Part(GameObject parent, string name, Vector3 localPos, Vector3 size, Material mat, bool keepCollider)
@@ -364,6 +416,53 @@ public static class CarFactory
         go.GetComponent<MeshRenderer>().sharedMaterial = mat;
         if (!keepCollider) Object.DestroyImmediate(go.GetComponent<Collider>());
         return go;
+    }
+
+    /// 車漆材質：以原材質為底做「Paint_」複本資產（metallic + 高 smoothness 的清漆感）
+    static void ApplyCarPaint(GameObject body)
+    {
+        foreach (var r in body.GetComponentsInChildren<Renderer>())
+        {
+            var mats = r.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+                if (mats[i] != null) mats[i] = PaintVersion(mats[i]);
+            r.sharedMaterials = mats;
+        }
+    }
+
+    static Material PaintVersion(Material src)
+    {
+        string path = MaterialsDir + "/Paint_" + src.name + ".mat";
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (existing != null) return existing;
+        System.IO.Directory.CreateDirectory(MaterialsDir);
+        var mat = new Material(src)
+        {
+            name = "Paint_" + src.name,
+        };
+        mat.SetFloat("_Metallic", 0.42f);
+        mat.SetFloat("_Smoothness", 0.8f);
+        AssetDatabase.CreateAsset(mat, path);
+        return mat;
+    }
+
+    /// 物理材質資產（摩擦取小、彈性取大 —— 牆的材質再高摩擦也拖不住低摩擦的車殼）
+    public static PhysicsMaterial PhysMat(string name, float friction, float bounce)
+    {
+        string path = MaterialsDir + "/" + name + ".physicMaterial";
+        var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);
+        if (existing != null) return existing;
+        System.IO.Directory.CreateDirectory(MaterialsDir);
+        var pm = new PhysicsMaterial(name)
+        {
+            dynamicFriction = friction,
+            staticFriction = friction,
+            bounciness = bounce,
+            frictionCombine = PhysicsMaterialCombine.Minimum,
+            bounceCombine = PhysicsMaterialCombine.Maximum,
+        };
+        AssetDatabase.CreateAsset(pm, path);
+        return pm;
     }
 
     static Material Mat(string name, Color color, float smoothness)

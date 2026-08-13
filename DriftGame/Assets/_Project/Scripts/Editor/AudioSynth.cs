@@ -21,8 +21,192 @@ public static class AudioSynth
         WriteWav(AudioDir + "/impact.wav", Impact());
         WriteWav(AudioDir + "/backfire.wav", Backfire());
         WriteWav(AudioDir + "/horn.wav", Horn());
+        GenerateEngineLayers();
+        WriteWav(AudioDir + "/beep_count.wav", Beep(880f, 0.20f));
+        WriteWav(AudioDir + "/beep_go.wav", Beep(1318.5f, 0.55f));
+        WriteWav(AudioDir + "/gearshift.wav", GearShift());
+        WriteWav(AudioDir + "/backfire_2.wav", BackfireVariant(4242, 130f, 11f));
+        WriteWav(AudioDir + "/backfire_3.wav", BackfireVariant(90210, 175f, 7f));
         AssetDatabase.Refresh();
         Debug.Log("[AudioSynth] audio generated");
+    }
+
+    // ---------- 真實引擎取樣 → 多轉速分層 ----------
+    /// 引擎聲要「真」的關鍵不是單一取樣的品質，而是**多轉速分層交叉混音**：
+    /// 一個 loop 從 0.55 拉到 2.45 倍音高會像割草機；
+    /// 低/中/高三層各只拉 ±30%，聽感就是換檔會呼吸的真引擎。
+    /// 來源：Trigger Rally 專案的真實引擎錄音（CC-BY 3.0, qubodup），入庫於 _Assets\audio_cc0。
+    /// 來源檔缺席時退回合成脈衝引擎（不同基頻），管線在任何機器都能重跑。
+    public static void GenerateEngineLayers()
+    {
+        string src = Path.Combine(Application.dataPath,
+            "../../_Assets/audio_cc0/engine-loop/engine-loop-1-normalized.wav");
+
+        float[] mono = File.Exists(src) ? ReadWavMono(src) : null;
+
+        if (mono != null && mono.Length > Rate / 2)
+        {
+            // 重取樣 = 音高平移（連時長一起變，對 loop 完全合法）
+            WriteWav(AudioDir + "/engine_low.wav", Resample(mono, 0.52f));
+            WriteWav(AudioDir + "/engine_mid.wav", Resample(mono, 1.0f));
+            WriteWav(AudioDir + "/engine_high.wav", Resample(mono, 1.72f));
+            Debug.Log("[AudioSynth] 引擎三層由真實取樣產生: " + src);
+        }
+        else
+        {
+            WriteWav(AudioDir + "/engine_low.wav", EngineAt(62f));
+            WriteWav(AudioDir + "/engine_mid.wav", EngineAt(120f));
+            WriteWav(AudioDir + "/engine_high.wav", EngineAt(215f));
+            Debug.LogWarning("[AudioSynth] 找不到真實引擎取樣，改用合成分層: " + src);
+        }
+    }
+
+    /// 讀 16-bit PCM WAV → 混成 mono float。用 chunk 走訪，容忍 LIST 等額外區塊。
+    static float[] ReadWavMono(string path)
+    {
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            if (bytes.Length < 44) return null;
+            int channels = 1, bits = 16, dataOfs = -1, dataLen = 0;
+            int p = 12;   // 跳過 RIFF____WAVE
+            while (p + 8 <= bytes.Length)
+            {
+                string id = System.Text.Encoding.ASCII.GetString(bytes, p, 4);
+                int len = System.BitConverter.ToInt32(bytes, p + 4);
+                if (id == "fmt ")
+                {
+                    channels = System.BitConverter.ToInt16(bytes, p + 10);
+                    bits = System.BitConverter.ToInt16(bytes, p + 22);
+                }
+                else if (id == "data") { dataOfs = p + 8; dataLen = len; break; }
+                p += 8 + len + (len & 1);
+            }
+            if (dataOfs < 0 || bits != 16) return null;
+
+            int frames = dataLen / 2 / channels;
+            var mono = new float[frames];
+            for (int i = 0; i < frames; i++)
+            {
+                float sum = 0f;
+                for (int c = 0; c < channels; c++)
+                    sum += System.BitConverter.ToInt16(bytes, dataOfs + (i * channels + c) * 2);
+                mono[i] = sum / channels / 32768f;
+            }
+            return mono;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[AudioSynth] WAV 讀取失敗: " + e.Message);
+            return null;
+        }
+    }
+
+    /// 線性插值重取樣：rate>1 音高變高、時長變短
+    static float[] Resample(float[] src, float rate)
+    {
+        int n = Mathf.Max(64, (int)(src.Length / rate));
+        var outp = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float x = i * rate;
+            int i0 = (int)x;
+            float f = x - i0;
+            outp[i] = src[i0 % src.Length] * (1f - f) + src[(i0 + 1) % src.Length] * f;
+        }
+        Crossfade(outp, Rate / 100);
+        Normalize(outp, 0.8f);
+        return outp;
+    }
+
+    /// 指定點火頻率的合成引擎（給真實取樣缺席時的退路）
+    static float[] EngineAt(float f0)
+    {
+        int n = Rate;
+        var s = new float[n];
+        var rnd = new System.Random((int)f0);
+        float r1 = 0.9955f, w1 = 2f * Mathf.PI * (f0 * 1.8f) / Rate;
+        float r2 = 0.988f, w2 = 2f * Mathf.PI * (f0 * 7.2f) / Rate;
+        float a1 = 2f * r1 * Mathf.Cos(w1), b1 = -r1 * r1;
+        float a2 = 2f * r2 * Mathf.Cos(w2), b2 = -r2 * r2;
+        float y1 = 0f, y2 = 0f, z1 = 0f, z2 = 0f;
+        float pulsePeriod = Rate / f0;
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            float pulsePos = (i % pulsePeriod) / pulsePeriod;
+            float excite = pulsePos < 0.08f ? Mathf.Exp(-pulsePos * 45f) * (1f - pulsePos / 0.08f) : 0f;
+            excite += 0.02f * ((float)rnd.NextDouble() * 2f - 1f);
+            float o1 = excite + a1 * y1 + b1 * y2; y2 = y1; y1 = o1;
+            float o2 = excite + a2 * z1 + b2 * z2; z2 = z1; z1 = o2;
+            float sub = 0.35f * Mathf.Sin(2f * Mathf.PI * (f0 / 4f) * t);
+            s[i] = (float)Math.Tanh((o1 * 0.55f + o2 * 0.18f + sub) * 1.5f);
+        }
+        Crossfade(s, Rate / 200);
+        Normalize(s, 0.78f);
+        return s;
+    }
+
+    // ---------- 起跑倒數嗶聲：F1 式短嗶 ×3 + 長嗶起跑 ----------
+    static float[] Beep(float freq, float dur)
+    {
+        int n = (int)(Rate * dur);
+        var s = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            float env = Mathf.Clamp01(t * 400f) * Mathf.Clamp01((dur - t) * 30f);
+            // 基頻 + 少量 3 次諧波：電子計時器的「嗶」而不是純正弦的悶
+            float v = Mathf.Sin(2f * Mathf.PI * freq * t) + 0.22f * Mathf.Sin(2f * Mathf.PI * freq * 3f * t);
+            s[i] = v * env * 0.75f;
+        }
+        return s;
+    }
+
+    // ---------- 換檔頓挫：變速箱接合的機械「喀」聲 ----------
+    static float[] GearShift()
+    {
+        int n = (int)(Rate * 0.14f);
+        var s = new float[n];
+        var rnd = new System.Random(555);
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            // 低頻悶擊（傳動系受衝）
+            float thump = 0.9f * Mathf.Exp(-t * 60f) * Mathf.Sin(2f * Mathf.PI * 120f * Mathf.Exp(-t * 18f) * t);
+            // 金屬咔嗒（撥叉入檔）
+            float click = 0.5f * Mathf.Exp(-t * 220f) * ((float)rnd.NextDouble() * 2f - 1f);
+            float ring = 0.18f * Mathf.Exp(-t * 90f) * Mathf.Sin(2f * Mathf.PI * 2100f * t);
+            s[i] = (float)Math.Tanh(thump + click + ring);
+        }
+        Normalize(s, 0.7f);
+        return s;
+    }
+
+    /// 回火變體：不同亂數種子與共鳴/衰減 → 每次放砲不重樣
+    static float[] BackfireVariant(int seed, float resonHz, float crackleDecay)
+    {
+        int n = (int)(Rate * 0.7f);
+        var s = new float[n];
+        var rnd = new System.Random(seed);
+        float r = 0.9975f, w = 2f * Mathf.PI * resonHz / Rate;
+        float a = 2f * r * Mathf.Cos(w), b = -r * r;
+        float y1 = 0f, y2 = 0f;
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / Rate;
+            float blast = Mathf.Exp(-t * 90f) * ((float)rnd.NextDouble() * 2f - 1f);
+            float crackleEnv = Mathf.Exp(-t * crackleDecay);
+            float crackle = 0f;
+            if (rnd.NextDouble() < 0.035 * crackleEnv * 12f)
+                crackle = ((float)rnd.NextDouble() * 2f - 1f) * crackleEnv;
+            float excite = blast * 1.4f + crackle * 0.9f;
+            float o = excite + a * y1 + b * y2; y2 = y1; y1 = o;
+            float boom = 1.1f * Mathf.Exp(-t * 16f) * Mathf.Sin(2f * Mathf.PI * (75f * Mathf.Exp(-t * 12f) + 38f) * t);
+            s[i] = (float)Math.Tanh((o * 0.5f + boom) * 1.2f);
+        }
+        Normalize(s, 0.95f);
+        return s;
     }
 
     // ---------- 引擎：四缸四行程點火脈衝模型 ----------

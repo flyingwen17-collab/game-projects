@@ -75,6 +75,9 @@ public class NPCDriver : MonoBehaviour
         if (car == null || path == null || path.Count == 0) return;
         if (!car.enabled) return;
 
+        // 起跑倒數中：AI 不思考、脫困計時歸零（否則紅燈期間會累積到自動倒車）
+        if (car.controlsLocked) { stuckTimer = 0f; return; }
+
         float speedKmh = car.SpeedKmh;
 
         // ---- 1. 循跡：瞄準前方預瞄點 ----
@@ -105,6 +108,20 @@ public class NPCDriver : MonoBehaviour
         if (speedKmh < TargetKmh - 4f) throttleCmd = 1f;
         else if (speedKmh > TargetKmh + 6f) throttleCmd = -0.75f;   // 煞車
         else throttleCmd = 0.35f;
+
+        // ---- 2.5 前車偵測：前方有車就依距離減速，不要輾過去 ----
+        // 競速型看得近（貼上去拚超車是比賽的一部分），車流看得遠、開得慫
+        float lookDist = (style == Style.Traffic ? 10f : 5f) + speedKmh * 0.30f;
+        Vector3 probeOrigin = transform.position + transform.up * 0.6f + transform.forward * 2.5f;
+        if (Physics.SphereCast(probeOrigin, 1.1f, transform.forward, out RaycastHit ahead, lookDist,
+                               ~0, QueryTriggerInteraction.Ignore)
+            && ahead.rigidbody != null && ahead.rigidbody != rb
+            && ahead.rigidbody.GetComponent<CarController>() != null)
+        {
+            float closeness = 1f - ahead.distance / lookDist;   // 0=剛看到 1=貼上了
+            if (closeness > 0.55f) throttleCmd = -0.9f;         // 快撞上：煞車
+            else throttleCmd = Mathf.Min(throttleCmd, 1f - closeness * 1.6f);
+        }
 
         // ---- 3. 甩尾：急彎 + 夠快 → 點一下手煞車入彎 ----
         bool handbrake = false;

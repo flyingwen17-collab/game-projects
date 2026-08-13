@@ -115,6 +115,7 @@ public static class TrackGen
     {
         var root = new GameObject(name);
         root.isStatic = true;
+        var wallPhys = CarFactory.PhysMat("WallPhys", 0.04f, 0.18f);
         int n = s.Count;
         for (int i = 0; i < n; i += step)
         {
@@ -133,6 +134,8 @@ public static class TrackGen
                 wall.transform.rotation = Quaternion.LookRotation(dir);
                 wall.transform.localScale = new Vector3(thickness, height, len + 0.5f);
                 wall.GetComponent<MeshRenderer>().sharedMaterial = mat;
+                // 護欄低摩擦：擦到會滑開減速，不會把車釘在牆上
+                wall.GetComponent<Collider>().sharedMaterial = wallPhys;
                 wall.isStatic = true;
             }
         }
@@ -265,11 +268,17 @@ public static class TrackGen
         src.volume = 0.3f;
         src.spatialBlend = 0f;
 
+        var directorGo = new GameObject("RaceDirector");
+        var director = directorGo.AddComponent<RaceDirector>();
+        director.beepCountClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/beep_count.wav");
+        director.beepGoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioSynth.AudioDir + "/beep_go.wav");
+
         var gmGo = new GameObject("GameManager");
         var gm = gmGo.AddComponent<GameManager>();
         gm.cars = cars;
         gm.cameraFollow = follow;
         gm.npcs = npcs;
+        gm.director = director;
     }
 
     // ---------------- 材質 ----------------

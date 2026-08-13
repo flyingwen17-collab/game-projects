@@ -14,3 +14,6 @@
 | 2026-08-04 | 共用 | Background Posed Humans Pack(觀眾姿勢人物,存 `_Assets\quaternius\crowd\`;男性姿勢僅 4/10,Drive 限流待補) | Quaternius (quaternius.com) | CC0 |
 | 2026-08-04 | 共用 | HDRI 天空 4 張:qwantani_dusk_2 / qwantani_afternoon / industrial_sunset_02 / clarens_night_02(存 `_Assets\polyhaven\`) | Poly Haven (polyhaven.com) | CC0 |
 | 2026-08-04 | 工具 | Blender 4.5.12 可攜版(E:\Tools\blender-4.5.12-windows-x64) | blender.org | GPL(工具,非素材) |
+| 2026-08-13 | DriftGame | 真實引擎錄音 engine-loop-1(存 `_Assets\audio_cc0\engine-loop\`,重取樣為 engine_low/mid/high 三層) | qubodup, "Car Engine Loop" (opengameart.org/content/car-engine-loop-96khz-4s, Trigger Rally 專案) | **CC-BY 3.0(上架必須標註:Sound by qubodup)** |
+| 2026-08-13 | DriftGame | 引擎音高變體 loop_0~5.wav(存 `_Assets\audio_cc0\`,備用) | "racing car engine sound loops" (opengameart.org/content/racing-car-engine-sound-loops) | CC0 |
+| 2026-08-13 | DriftGame | 掃描 PBR 材質 6 套:Asphalt025C/Concrete016/Grass001/PavingStones128/Metal032/Gravel022(2K,存 `_Assets\ambientcg\`) | ambientCG (ambientcg.com) | CC0 |

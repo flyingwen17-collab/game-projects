@@ -5,6 +5,12 @@
 
 ## 未修
 
+- **[DriftGame][小] 起跑倒數期間車速顯示約 11~12 km/h（三張 build 截圖皆同）**
+  現象：紅燈倒數中操作已鎖、手煞車拉住，但 HUD 顯示車在低速滑動，輪邊有胎煙。
+  懷疑：起跑格 TeleportTo 落地 0.5m 的彈跳 + 手煞車只鎖後輪的前滑。
+  影響：輕微（起跑前的視覺小瑕疵），實玩確認嚴重度後再修。
+  記錄日期：2026-08-14
+
 - **[SumoParty][美術] MPFB 真人體力士整合未完成（工具鏈已通，兩個技術點卡住）**
   已完成：MPFB extension 安裝進 Blender 4.5、API 探勘、生成管線腳本
   （`E:\Tools\gen_rikishi_mpfb.py`）、helper 幾何清除、shape keys 烘焙。

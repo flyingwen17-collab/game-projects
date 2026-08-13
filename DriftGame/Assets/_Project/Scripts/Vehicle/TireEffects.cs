@@ -2,13 +2,18 @@ using UnityEngine;
 
 /// 輪胎視覺回饋：胎痕與胎煙的濃度由「該輪實際用掉多少抓地力」決定，
 /// 而不是一個粗略的甩尾開關 —— 所以輕微推頭、鎖死、燒胎的煙量都不一樣。
+///
+/// v2 重做（根治「奇怪的紅線」）：
+///  1. 材質一律用 CarFactory 建好的 .mat 資產 —— 舊版在執行期 Shader.Find 生材質，
+///     打包後 shader 被剝除，整條胎痕變成洋紅色錯誤線。
+///  2. 胎痕跟隨 CarController 的真實接地點與路面法線 —— 舊版掛在停用的
+///     WheelCollider 錨點上（不隨懸吊移動），線會浮空或插進地面。
 [RequireComponent(typeof(CarController))]
 public class TireEffects : MonoBehaviour
 {
-    public WheelCollider[] allWheels = new WheelCollider[4];   // FL FR RL RR
-
-    [Tooltip("輪胎煙貼圖（RGB 白、形狀在 Alpha）")]
-    public Texture2D smokeTexture;
+    [Header("材質（CarFactory 指定的資產，執行期不再 Shader.Find）")]
+    public Material skidMaterial;
+    public Material smokeMaterial;
 
     [Header("門檻")]
     [Tooltip("抓地力使用率超過此值開始留胎痕")]
@@ -20,50 +25,46 @@ public class TireEffects : MonoBehaviour
     CarController car;
     TrailRenderer[] trails;
     ParticleSystem[] smokes;
+    Vector3[] lastContact;
 
     void Start()
     {
         car = GetComponent<CarController>();
         trails = new TrailRenderer[4];
         smokes = new ParticleSystem[4];
+        lastContact = new Vector3[4];
 
         for (int i = 0; i < 4; i++)
         {
-            if (allWheels[i] == null) continue;
-            trails[i] = MakeTrail(allWheels[i]);
-            // 只有驅動/後輪需要濃煙，前輪給少量即可，省效能
-            smokes[i] = MakeSmoke(allWheels[i]);
+            trails[i] = MakeTrail(i);
+            smokes[i] = MakeSmoke(i);
         }
     }
 
-    TrailRenderer MakeTrail(WheelCollider wheel)
+    TrailRenderer MakeTrail(int i)
     {
-        var go = new GameObject("SkidTrail");
-        go.transform.SetParent(wheel.transform, false);
-        go.transform.localPosition = new Vector3(0f, -wheel.radius + 0.05f, 0f);
-        go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        var go = new GameObject("SkidTrail" + i);
+        go.transform.SetParent(transform, true);   // world 座標由每幀更新，parent 只管生命週期
 
         var tr = go.AddComponent<TrailRenderer>();
-        tr.time = 9f;
-        tr.startWidth = 0.26f;
-        tr.endWidth = 0.22f;
-        tr.minVertexDistance = 0.10f;
-        tr.alignment = LineAlignment.TransformZ;
+        tr.time = 14f;
+        tr.startWidth = 0.24f;
+        tr.endWidth = 0.20f;
+        tr.minVertexDistance = 0.08f;
+        tr.alignment = LineAlignment.TransformZ;   // 面在 XY 平面 → Z 軸對齊路面法線就平貼地
         tr.numCapVertices = 2;
+        tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        tr.receiveShadows = false;
 
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-        mat.SetColor("_BaseColor", new Color(0.04f, 0.04f, 0.045f, 0.72f));
-        MakeTransparent(mat);
-        tr.material = mat;
+        if (skidMaterial != null) tr.sharedMaterial = skidMaterial;
         tr.emitting = false;
         return tr;
     }
 
-    ParticleSystem MakeSmoke(WheelCollider wheel)
+    ParticleSystem MakeSmoke(int i)
     {
-        var go = new GameObject("TireSmoke");
-        go.transform.SetParent(wheel.transform, false);
-        go.transform.localPosition = new Vector3(0f, -wheel.radius + 0.12f, 0f);
+        var go = new GameObject("TireSmoke" + i);
+        go.transform.SetParent(transform, true);
 
         var ps = go.AddComponent<ParticleSystem>();
         var main = ps.main;
@@ -101,27 +102,14 @@ public class TireEffects : MonoBehaviour
         col.color = grad;
 
         var renderer = ps.GetComponent<ParticleSystemRenderer>();
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
-        mat.SetTexture("_BaseMap", smokeTexture != null ? (Texture)smokeTexture : Texture2D.whiteTexture);
-        MakeTransparent(mat);
-        renderer.material = mat;
+        if (smokeMaterial != null) renderer.sharedMaterial = smokeMaterial;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         return ps;
-    }
-
-    static void MakeTransparent(Material mat)
-    {
-        mat.SetFloat("_Surface", 1f);
-        mat.SetOverrideTag("RenderType", "Transparent");
-        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        mat.SetInt("_ZWrite", 0);
-        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
     }
 
     void Update()
     {
-        if (car == null) return;
+        if (car == null || trails == null) return;
         bool active = car.enabled;
 
         for (int i = 0; i < 4; i++)
@@ -131,12 +119,26 @@ public class TireEffects : MonoBehaviour
             bool grounded = active && car.Grounded[i];
             float usage = grounded ? car.GripUsage[i] : 0f;
 
+            Vector3 contact = car.ContactPoint[i];
+            Vector3 normal = grounded ? car.ContactNormal[i] : Vector3.up;
+
+            // 車被重置/瞬移時把舊軌跡剪斷，否則會拉出一條橫跨全場的直線
+            if ((contact - lastContact[i]).sqrMagnitude > 25f) trails[i].Clear();
+            lastContact[i] = contact;
+
+            // 貼在路面上方一點點，Z 軸對齊法線 → 胎痕平貼路面（含斜坡）
+            trails[i].transform.SetPositionAndRotation(
+                contact + normal * 0.03f, Quaternion.LookRotation(normal));
+
             // 草地/泥土：塵土是棕色的、輕滑就揚起；柏油才是白色燒胎煙
             bool offroad = grounded && car.SurfaceMu[i] < 0.8f;
             float mThresh = offroad ? 0.55f : markThreshold;
             float sThresh = offroad ? 0.58f : smokeThreshold;
 
-            trails[i].emitting = grounded && !offroad && usage > mThresh;   // 泥地不留黑胎痕
+            // 泥地不留黑胎痕；幾乎靜止時也不畫（避免原地疊出黑點）
+            trails[i].emitting = grounded && !offroad && usage > mThresh && car.SpeedKmh > 5f;
+
+            smokes[i].transform.position = contact + normal * 0.1f;
 
             var main = smokes[i].main;
             main.startColor = offroad ? new Color(0.58f, 0.48f, 0.36f, 0.32f)
